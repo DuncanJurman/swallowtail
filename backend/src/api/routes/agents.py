@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from ...agents.market_research import MarketResearchAgent
 from ...agents.orchestrator import OrchestratorAgent
-from ...core.state import SharedState
+from ...core.state import SharedState, WorkflowStatus
 
 router = APIRouter()
 
@@ -40,6 +40,14 @@ orchestrator.register_agent("market_research", market_research)
 async def start_workflow(request: WorkflowRequest) -> WorkflowResponse:
     """Start a new workflow."""
     try:
+        # Check if a workflow is already running
+        current_status = shared_state.get_workflow_status()
+        if current_status and current_status.value not in ["idle", "error", "completed"]:
+            return WorkflowResponse(
+                success=False,
+                error=f"Cannot start new workflow. Current workflow is in '{current_status.value}' state."
+            )
+        
         result = await orchestrator.execute({
             "workflow": request.workflow_type,
             **request.context
@@ -49,6 +57,32 @@ async def start_workflow(request: WorkflowRequest) -> WorkflowResponse:
             success=result.success,
             data=result.data,
             error=result.error
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/workflow/cancel", response_model=WorkflowResponse)
+async def cancel_workflow() -> WorkflowResponse:
+    """Cancel the current workflow."""
+    try:
+        current_status = shared_state.get_workflow_status()
+        if not current_status or current_status.value in ["idle", "completed"]:
+            return WorkflowResponse(
+                success=False,
+                error="No active workflow to cancel."
+            )
+        
+        # Clear all workflow-related state
+        shared_state.update_workflow_status(WorkflowStatus.IDLE)
+        shared_state.delete("current_product")
+        shared_state.delete("pending_checkpoint")
+        shared_state.delete("product_ideas")
+        shared_state.delete("selected_product")
+        
+        return WorkflowResponse(
+            success=True,
+            data={"message": f"Workflow in '{current_status.value}' state has been cancelled."}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -165,6 +165,7 @@ yarn-error.log*
 .next/
 out/
 .vercel
+next-env.d.ts
 
 # Environment files
 .env.local
@@ -176,3 +177,9 @@ out/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+# Temporary test files
+test_*.py
+*_test.py
+quick_test.py
+test_setup.py

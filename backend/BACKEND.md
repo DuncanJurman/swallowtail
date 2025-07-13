@@ -117,12 +117,15 @@ backend/
 #### `src/api/routes/agents.py`
 - **Purpose**: Agent workflow control
 - **Endpoints**:
-  - `POST /api/v1/agents/workflow/start`: Start new workflow
+  - `POST /api/v1/agents/workflow/start`: Start new workflow (with validation to prevent multiple active workflows)
   - `GET /api/v1/agents/workflow/status`: Get current status
+  - `POST /api/v1/agents/workflow/cancel`: Cancel active workflow
 - **Features**:
   - Agent initialization and registration
   - Workflow request/response models
   - Error handling
+  - Workflow state validation to prevent concurrent workflows
+  - Workflow cancellation with state cleanup
 
 #### `src/api/routes/checkpoints.py`
 - **Purpose**: Human checkpoint management

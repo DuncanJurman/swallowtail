@@ -26,6 +26,13 @@ export const workflowApi = {
     }>(`${API_PREFIX}/agents/workflow/status`)
     return response.data
   },
+
+  cancel: async () => {
+    const response = await apiClient.post<WorkflowResponse>(
+      `${API_PREFIX}/agents/workflow/cancel`
+    )
+    return response.data
+  },
 }
 
 // Checkpoints API

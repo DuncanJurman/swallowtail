@@ -102,7 +102,10 @@ frontend/
 
 #### Dashboard Components
 - **`components/workflow-status.tsx`**: Displays current workflow status with auto-refresh
-- **`components/quick-actions.tsx`**: Button to start new product research workflow
+- **`components/quick-actions.tsx`**: 
+  - Start new product research workflow button
+  - Cancel active workflow button (appears when workflow is running)
+  - Workflow state validation to prevent multiple concurrent workflows
 - **`components/recent-activity.tsx`**: Real-time activity feed via WebSocket
 
 #### Checkpoint Components

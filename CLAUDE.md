@@ -6,6 +6,8 @@
 These rules ensure maintainability, safety, and developer velocity. 
 **MUST** rules are enforced by CI; **SHOULD** rules are strongly recommended.
 
+When you are asked a question about what is currently implemented review frontend.md and backend.md for information 
+
 ---
 
 ### 1 — Before Coding
@@ -162,6 +164,8 @@ Output a comprehensive list of scenarios you would test, sorted by highest prior
 When I type "qgit", this means:
 
 ```
+Mkae sure to update the .gitignore accordingly 
+
 Add all changes to staging, create a commit, and push to remote.
 
 Follow this checklist for writing your commit message:
