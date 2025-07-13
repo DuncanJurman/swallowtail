@@ -60,6 +60,16 @@ When using a library make to sure to adhere to the most up to date documentation
 - **G-1 (MUST)** `prettier --check` passes.  
 - **G-2 (MUST)** `turbo typecheck lint` passes.  
 
+### 7 - Git
+
+- **GH-1 (MUST**) Use Conventional Commits format when writing commit messages: https://www.conventionalcommits.org/en/v1.0.0
+- **GH-2 (SHOULD NOT**) Refer to Claude or Anthropic in commit messages.
+
+---
+### 8 - Backend.md and Frontend.md 
+
+Everytime you make a change to either the backend and frontend document it accordingly in the .md file with its functionality, dependcies etc. 
+
 ## Writing Functions Best Practices
 
 When evaluating whether a function you implemented is good or not, use this checklist:
@@ -137,6 +147,14 @@ You are a SKEPTICAL senior software engineer. Review all code changes for any bu
 
 ```
 
+### QUX
+
+When I type "qux", this means:
+
+```
+Imagine you are a human UX tester of the feature you implemented. 
+Output a comprehensive list of scenarios you would test, sorted by highest priority.
+```
 
 
 ### QGIT

@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     
     # Environment
     environment: str = "development"
-    debug: bool = True
+    debug: bool = False
     
     # External API Keys
     serper_api_key: Optional[str] = None
