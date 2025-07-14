@@ -188,6 +188,71 @@ backend/
   - `PINECONE_ENVIRONMENT`: Deployment environment (default: "gcp-starter")
 - **Error Handling**: Custom `PineconeServiceError` for service-specific errors
 
+### Database Layer
+
+#### `src/core/database.py`
+- **Purpose**: Database configuration and connection management
+- **Database**: PostgreSQL (via Supabase)
+- **Key Features**:
+  - Async SQLAlchemy engine with asyncpg driver
+  - Connection pooling configuration
+  - Async session management
+  - Database initialization utilities
+- **Functions**:
+  - `get_db()`: Dependency injection for database sessions
+  - `init_db()`: Initialize database tables
+  - `close_db()`: Cleanup database connections
+
+#### `src/models/database.py`
+- **Purpose**: SQLAlchemy ORM models for core entities
+- **Tables**:
+  - `products`: E-commerce product catalog with lifecycle tracking
+  - `agents`: AI agent registry and performance metrics
+  - `agent_tasks`: Task execution history and results
+  - `market_opportunities`: Discovered opportunities awaiting evaluation
+  - `agent_decisions`: Audit trail of agent decisions
+  - `shared_knowledge`: Cross-product learning repository
+- **Key Features**:
+  - UUID primary keys for distributed systems
+  - JSONB fields for flexible data storage
+  - Comprehensive timestamps and audit trails
+  - Relationships between entities
+  - Enum types for status management
+
+#### Database Migrations
+- **Tool**: Alembic for schema version control
+- **Configuration**: `alembic/env.py` configured for async operations
+- **Commands**:
+  ```bash
+  # Create new migration
+  poetry run alembic revision --autogenerate -m "Description"
+  
+  # Apply migrations
+  poetry run alembic upgrade head
+  
+  # Rollback one version
+  poetry run alembic downgrade -1
+  ```
+
+#### Database Configuration
+- **Environment Variables**:
+  - `DATABASE_URL`: PostgreSQL connection string (pooled)
+  - `DATABASE_DIRECT_URL`: Direct connection for migrations
+  - `SUPABASE_URL`: Supabase project URL
+  - `SUPABASE_ANON_KEY`: Public API key
+  - `SUPABASE_SERVICE_KEY`: Service role key for backend
+
+#### Testing Database Setup
+- **File**: `tests/test_database_setup.py`
+- **Purpose**: Verify database connectivity and schema
+- **Usage**: `poetry run python -m tests.test_database_setup`
+- **Checks**:
+  - Connection validity
+  - Table existence
+  - Migration status
+  - Schema structure
+  - Row counts
+
 ### Entry Points
 
 #### `run.py`
@@ -251,6 +316,8 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 - API keys placeholders (OpenAI, Serper, Shopify, Pinecone)
 - Configuration examples
 - Pinecone settings for vector database
+- Supabase database connection strings
+- Service authentication keys
 
 ## Current Capabilities
 
@@ -262,6 +329,8 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 6. **Workflow Management**: Status tracking and resumption
 7. **Task Queue System**: Celery for background task processing
 8. **Vector Database**: Pinecone integration for similarity search and embeddings
+9. **Persistent Storage**: PostgreSQL database via Supabase for business data
+10. **Database Migrations**: Alembic for schema version control
 
 ## Next Steps
 

@@ -6,7 +6,7 @@
 These rules ensure maintainability, safety, and developer velocity. 
 **MUST** rules are enforced by CI; **SHOULD** rules are strongly recommended.
 
-When you are asked a question about what is currently implemented review frontend.md and backend.md for information 
+When you are asked a question about what is currently implemented review frontend.md and backend.md for information. Always choose the most cost effective / pay as you go option when it comes to architecture choices
 
 ---
 
@@ -165,6 +165,7 @@ When I type "qgit", this means:
 
 ```
 Mkae sure to update the .gitignore accordingly 
+- SHOULD NOT refer to Claude or Anthropic in the commit message.
 
 Add all changes to staging, create a commit, and push to remote.
 

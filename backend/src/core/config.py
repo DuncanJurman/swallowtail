@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     pinecone_index_name: str = "swallowtail-products"
     pinecone_environment: str = "gcp-starter"
     
+    # Database Configuration
+    database_url: Optional[str] = None
+    database_direct_url: Optional[str] = None
+    supabase_url: Optional[str] = None
+    supabase_anon_key: Optional[str] = None
+    supabase_service_key: Optional[str] = None
+    
     # Agent Configuration
     max_agent_iterations: int = 10
     agent_timeout_seconds: int = 300
