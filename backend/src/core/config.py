@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     shopify_api_secret: Optional[str] = None
     shopify_store_url: Optional[str] = None
     
+    # Pinecone Configuration
+    pinecone_api_key: Optional[str] = None
+    pinecone_index_name: str = "swallowtail-products"
+    pinecone_environment: str = "gcp-starter"
+    
     # Agent Configuration
     max_agent_iterations: int = 10
     agent_timeout_seconds: int = 300

@@ -11,7 +11,7 @@ backend/
 │   ├── api/           # FastAPI routes and endpoints
 │   ├── core/          # Core utilities
 │   ├── models/        # Data models
-│   ├── services/      # Business logic (future)
+│   ├── services/      # External service integrations
 │   └── utils/         # Helper utilities (future)
 ├── tests/             # Test files
 ├── run.py            # Application entry point
@@ -41,6 +41,28 @@ backend/
   - `get()`, `set()`, `delete()`: Basic state operations
   - `update_workflow_status()`: Workflow state management
   - Namespaced Redis keys to prevent collisions
+
+#### `src/core/celery_app.py`
+- **Purpose**: Celery application configuration for task queue
+- **Key Features**:
+  - Redis as broker (DB 0) and result backend (DB 1)
+  - Three queues: `default`, `agents`, `background`
+  - Task routing based on name patterns
+  - JSON serialization for compatibility
+  - Auto-discovery of tasks in `src.core` and `src.agents`
+- **Configuration**: 30-minute task timeout, UTC timezone, prefetch multiplier = 1
+
+#### `src/core/tasks.py`
+- **Purpose**: Task definitions and Celery utilities
+- **Decorators**:
+  - `@agent_task`: For agent-specific tasks (3 retries, 60s delay)
+  - `@background_task`: For background processing (5 retries, 30s delay)
+- **Utilities**:
+  - `check_celery_health()`: Monitor worker status
+  - `execute_agent_task()`: Async-compatible task execution
+- **Example Tasks**:
+  - `ping`: Simple health check task
+  - `process_market_research`: Example agent task
 
 ### Data Models
 
@@ -109,10 +131,14 @@ backend/
   - API versioning setup
 
 #### `src/api/routes/health.py`
-- **Purpose**: Health check endpoint
+- **Purpose**: Health check endpoint with dependency monitoring
 - **Endpoints**:
-  - `GET /health`: Check API and Redis status
-- **Response**: Health status with dependency checks
+  - `GET /health`: Check API, Redis, and Celery status
+- **Response**: 
+  - Overall health status ("healthy", "degraded", "error")
+  - Redis connection status
+  - Celery worker status and active worker list
+  - API version
 
 #### `src/api/routes/agents.py`
 - **Purpose**: Agent workflow control
@@ -138,6 +164,30 @@ backend/
   - Workflow continuation after approval
   - Related data retrieval
 
+### External Services
+
+#### `src/services/pinecone.py`
+- **Purpose**: Vector database service for managing product embeddings
+- **Key Features**:
+  - Pinecone client initialization with API key validation
+  - Index creation with configurable dimension and metric
+  - Vector upsert with metadata support
+  - Similarity search with filtering capabilities
+  - Namespace isolation for multi-tenant support
+  - Batch operations for performance
+- **Main Class**: `PineconeService`
+  - `create_index_if_not_exists()`: Ensure index exists with proper configuration
+  - `upsert_vectors()`: Add or update vectors with metadata
+  - `query_similar_vectors()`: Find similar items with optional metadata filtering
+  - `delete_vectors()`: Remove specific vectors by ID
+  - `delete_all_vectors()`: Clear entire namespace
+  - `get_index_stats()`: Monitor index usage and statistics
+- **Configuration**:
+  - `PINECONE_API_KEY`: API authentication
+  - `PINECONE_INDEX_NAME`: Target index (default: "swallowtail-products")
+  - `PINECONE_ENVIRONMENT`: Deployment environment (default: "gcp-starter")
+- **Error Handling**: Custom `PineconeServiceError` for service-specific errors
+
 ### Entry Points
 
 #### `run.py`
@@ -148,12 +198,49 @@ backend/
   - Uvicorn server launch with hot reload
   - Path configuration for imports
 
+#### `src/worker.py`
+- **Purpose**: Celery worker entry point
+- **Usage**: Called by Celery to start worker processes
+- **Features**: Path configuration for module imports
+
+### Scripts
+
+#### `scripts/run_worker.sh`
+- **Purpose**: Development script to start Celery worker
+- **Features**:
+  - Sets PYTHONPATH for proper imports
+  - Runs worker with Poetry environment
+  - Configures 4 concurrent workers
+  - Monitors all three queues (default, agents, background)
+
+## Task Queue System
+
+#### Celery Configuration
+- **File**: `src/core/celery_app.py`
+- **Purpose**: Background task processing for long-running agent operations
+- **Broker**: Redis (database 0)
+- **Result Backend**: Redis (database 1)
+- **Queues**:
+  - `default`: General tasks
+  - `agents`: Agent-specific tasks
+  - `background`: Background processing
+
+#### Running Celery Worker
+```bash
+# Development
+./scripts/run_worker.sh
+
+# Or directly
+celery -A src.core.celery_app:celery_app worker --loglevel=info
+```
+
 ## Configuration Files
 
 #### `pyproject.toml`
 - Poetry dependency management
 - Development tools configuration (black, ruff, mypy)
 - Python 3.11+ requirement
+- Includes Celery and task queue dependencies
 
 #### `requirements.txt`
 - Quick setup dependencies for pip users
@@ -161,8 +248,9 @@ backend/
 
 #### `.env.example`
 - Template for environment variables
-- API keys placeholders
+- API keys placeholders (OpenAI, Serper, Shopify, Pinecone)
 - Configuration examples
+- Pinecone settings for vector database
 
 ## Current Capabilities
 
@@ -172,6 +260,8 @@ backend/
 4. **State Management**: Redis-based shared state between agents
 5. **REST API**: FastAPI endpoints for frontend integration
 6. **Workflow Management**: Status tracking and resumption
+7. **Task Queue System**: Celery for background task processing
+8. **Vector Database**: Pinecone integration for similarity search and embeddings
 
 ## Next Steps
 
@@ -183,9 +273,10 @@ backend/
 
 2. **Integrations**:
    - Shopify API for product management
-   - Image generation APIs
+   - Image generation APIs (DALL-E, Stable Diffusion)
    - Supplier APIs (Alibaba, etc.)
-   - Ad platform APIs
+   - Ad platform APIs (Google Ads, Facebook)
+   - ✅ Pinecone vector database (completed)
 
 3. **Features**:
    - WebSocket support for real-time updates
@@ -195,8 +286,39 @@ backend/
 
 ## Testing
 
-Currently, the test structure is set up but tests need to be implemented:
-- Unit tests for individual agents
-- Integration tests for workflows
-- API endpoint tests
-- State management tests
+### Test Structure
+```
+tests/
+├── conftest.py              # Pytest configuration and fixtures
+├── test_celery.py          # Unit tests for Celery configuration
+├── services/
+│   ├── test_pinecone.py    # Unit tests for Pinecone service
+│   └── test_pinecone_integration.py  # Integration tests with Pinecone
+└── integration/
+    └── test_celery_integration.py  # Integration tests requiring services
+```
+
+### Test Categories
+- **Unit Tests**: Run with `poetry run pytest -m unit`
+  - Celery configuration tests
+  - Task decorator tests
+  - Mocked service tests
+  - Pinecone service unit tests with mocked dependencies
+  
+- **Integration Tests**: Run with `poetry run pytest -m integration`
+  - End-to-end task execution
+  - Worker communication tests
+  - Pinecone vector operations (requires API key)
+  - Requires Redis and Celery worker running
+
+### Running Tests
+```bash
+# Unit tests only (fast, no dependencies)
+PYTHONPATH=. poetry run pytest -m unit -v
+
+# Integration tests (requires Redis + Celery worker)
+PYTHONPATH=. poetry run pytest -m integration -v
+
+# All tests
+PYTHONPATH=. poetry run pytest -v
+```
