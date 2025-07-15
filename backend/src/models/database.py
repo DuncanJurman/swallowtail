@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import uuid
 
-from sqlalchemy import Column, String, DateTime, Float, Integer, Boolean, JSON, ForeignKey, Text, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, Float, Integer, Boolean, JSON, ForeignKey, Text, Enum as SQLEnum, Numeric, Date, ARRAY, func
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import enum
 
@@ -45,6 +45,15 @@ class TaskStatus(str, enum.Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class OpportunityStatus(str, enum.Enum):
+    """Market opportunity status."""
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PROMOTED = "promoted"
 
 
 class Product(Base):
@@ -180,18 +189,28 @@ class MarketOpportunity(Base):
     # Scoring
     initial_score = Column(Float)
     final_score = Column(Float)
+    score = Column(Numeric(3, 2))  # Final computed score 0.00-1.00
     scoring_breakdown = Column(JSON)
     
     # Market data
     market_data = Column(JSON)
     trend_data = Column(JSON)
     competition_data = Column(JSON)
+    market_analysis = Column(JSON)
+    sourcing_options = Column(JSON)
     
     # Status
+    status = Column(SQLEnum(OpportunityStatus), default=OpportunityStatus.PENDING, nullable=False)
     is_processed = Column(Boolean, default=False)
     is_approved = Column(Boolean)
     processed_at = Column(DateTime)
     approval_notes = Column(Text)
+    
+    # Review tracking
+    discovery_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = Column(DateTime)
+    reviewer_id = Column(UUID(as_uuid=True))  # References users table when implemented
+    review_notes = Column(Text)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -265,3 +284,32 @@ class SharedKnowledge(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class TrendSnapshot(Base):
+    """Stores captured trend data from various sources."""
+    __tablename__ = 'trend_snapshots'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    source = Column(String(100), nullable=False)  # google_trends, social_media, marketplace
+    keywords = Column(ARRAY(Text), nullable=False)
+    metrics = Column(JSONB, nullable=False)  # source-specific metrics
+    geographic_data = Column(JSONB)
+    captured_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    processed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ResearchMetric(Base):
+    """Tracks Research Workshop performance metrics."""
+    __tablename__ = 'research_metrics'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    agent_name = Column(String(100), nullable=False)
+    execution_date = Column(Date, nullable=False)
+    opportunities_found = Column(Integer, default=0, nullable=False)
+    opportunities_approved = Column(Integer, default=0, nullable=False)
+    success_rate = Column(Numeric(3, 2))
+    average_score = Column(Numeric(3, 2))
+    metrics_data = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

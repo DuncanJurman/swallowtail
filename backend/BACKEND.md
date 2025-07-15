@@ -166,6 +166,32 @@ backend/
 
 ### External Services
 
+#### `src/services/storage.py`
+- **Purpose**: Manage file storage for product images and videos using Supabase Storage
+- **Key Features**:
+  - Product-based partitioning (`products/{product_id}/...`)
+  - Automatic image optimization (WebP conversion, resizing)
+  - Three storage buckets: product-images (public), product-videos (public), reference-images (private)
+  - Metadata tracking in PostgreSQL
+  - Support for different image types: reference, generated, temp
+  - Support for different video types: demo, ad, raw
+- **Main Class**: `SupabaseStorageService`
+  - `upload_image()`: Upload images with automatic optimization and metadata storage
+  - `upload_video()`: Upload videos with size validation
+  - `list_product_images()`: Get all images for a product
+  - `delete_product_assets()`: Clean up all assets for a product
+  - `get_signed_url()`: Generate temporary access URLs for private content
+- **Image Optimization**:
+  - Max dimension: 2048px (maintains aspect ratio)
+  - Format: WebP for generated images
+  - Quality: 85% for good balance
+  - Size reduction: Typically 70-90%
+- **Path Structure**:
+  - Reference: `products/{id}/reference/{timestamp}_{filename}`
+  - Generated: `products/{id}/generated/{subtype}/{session}_final.webp`
+  - Temp: `products/{id}/temp/{session}/{image_id}.webp`
+  - Videos: `products/{id}/{type}/...`
+
 #### `src/services/pinecone.py`
 - **Purpose**: Vector database service for managing product embeddings
 - **Key Features**:
@@ -236,11 +262,17 @@ backend/
 
 #### Database Configuration
 - **Environment Variables**:
-  - `DATABASE_URL`: PostgreSQL connection string (pooled)
-  - `DATABASE_DIRECT_URL`: Direct connection for migrations
+  - `DATABASE_URL`: PostgreSQL connection string (pooled) - Use this for application connections
+  - `DATABASE_DIRECT_URL`: Direct connection for migrations (may not be available on all Supabase plans)
   - `SUPABASE_URL`: Supabase project URL
   - `SUPABASE_ANON_KEY`: Public API key
   - `SUPABASE_SERVICE_KEY`: Service role key for backend
+
+#### Database Connection Notes
+- **pgBouncer Compatibility**: Supabase uses pgBouncer for connection pooling. When using asyncpg directly:
+  - Set `statement_cache_size=0` to disable prepared statements
+  - Use the pooled DATABASE_URL for connections (not DIRECT_URL)
+  - See `src/utils/db_helper.py` for proper connection setup
 
 #### Testing Database Setup
 - **File**: `tests/test_database_setup.py`
@@ -332,9 +364,69 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 9. **Persistent Storage**: PostgreSQL database via Supabase for business data
 10. **Database Migrations**: Alembic for schema version control
 
+## Research Workshop
+
+### Overview
+The Research Workshop is a continuous discovery engine that operates independently from product instances, constantly scanning for trends and opportunities.
+
+### Components
+
+#### Research Workshop Tables
+- **trend_snapshots**: Raw trend data from various sources (Google Trends, social media, marketplaces)
+- **research_metrics**: Performance tracking for research agents
+- **market_opportunities**: Enhanced with scoring, review workflow, and detailed analysis fields
+
+#### Research Agents (Planned)
+1. **TrendScannerAgent**: Monitors multiple data sources for emerging trends
+2. **MarketAnalyzerAgent**: Deep dives into specific opportunities 
+3. **SourcingScoutAgent**: Identifies potential suppliers and pricing
+4. **OpportunityEvaluatorAgent**: Scores and ranks opportunities using ML
+
+### Database Schema Updates
+```sql
+-- New tables for Research Workshop
+CREATE TABLE trend_snapshots (
+    id UUID PRIMARY KEY,
+    source VARCHAR(100),
+    keywords TEXT[],
+    metrics JSONB,
+    geographic_data JSONB,
+    captured_at TIMESTAMP,
+    processed BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE research_metrics (
+    id UUID PRIMARY KEY,
+    agent_name VARCHAR(100),
+    execution_date DATE,
+    opportunities_found INTEGER,
+    opportunities_approved INTEGER,
+    success_rate NUMERIC(3,2),
+    average_score NUMERIC(3,2)
+);
+
+-- Enhanced market_opportunities table
+ALTER TABLE market_opportunities ADD:
+    - status VARCHAR(50) -- pending, reviewed, approved, rejected, promoted
+    - score NUMERIC(3,2) -- 0.00-1.00 scoring
+    - market_analysis JSONB
+    - sourcing_options JSONB
+    - discovery_date TIMESTAMP
+    - review tracking fields
+```
+
 ## Next Steps
 
-1. **Additional Agents**:
+1. **Research Workshop Implementation**:
+   - ResearchWorkshop orchestrator with continuous discovery cycle
+   - TrendScannerAgent implementation
+   - MarketAnalyzerAgent implementation
+   - SourcingScoutAgent implementation
+   - OpportunityEvaluatorAgent with ML scoring
+   - API endpoints for opportunity management
+   - Frontend dashboard for opportunity review
+
+2. **Additional Agents**:
    - Product Sourcing Agent
    - Content Creation Agents (copy, image, video)
    - Marketing Agent
