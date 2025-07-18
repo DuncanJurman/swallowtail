@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The Image Evaluator Agent automates the quality control process by comparing generated images against reference photos and either approving them or generating specific refinement instructions. This creates a closed-loop system with the Image Generation Agent, significantly reducing human intervention while ensuring high-quality outputs that match brand and product requirements.
+The Image Evaluator Agent automates the quality control process by comparing generated images against reference photos and either approving them or generating specific prompt improvements. This creates a closed-loop system with the Image Generation Agent, significantly reducing human intervention while ensuring high-quality outputs that match brand and product requirements.
 
 ## Table of Contents
 1. [Architecture Overview](#architecture-overview)
@@ -32,22 +32,22 @@ The Image Evaluator Agent automates the quality control process by comparing gen
 │  └─────────────────┘             │                           │
 │           │                      ▼                           │
 │           │              ┌──────────────────┐                │
-│           │              │   Evaluation     │                │
-│           └─────────────▶│    Scorer        │                │
+│           └─────────────▶│   Evaluation     │                │
+│                          │    Scorer        │                │
 │                          └──────────────────┘                │
 │                                  │                           │
 │                                  ▼                           │
 │  ┌─────────────────────────────────────────┐                │
 │  │         Decision Engine                  │                │
 │  │  • Approve (confidence > threshold)      │                │
-│  │  • Refine (generate edit instructions)  │                │
+│  │  • Improve (generate prompt suggestions) │                │
 │  │  • Escalate (human review needed)       │                │
 │  └─────────────────────────────────────────┘                │
 │                                  │                           │
 │                                  ▼                           │
 │  ┌─────────────────────────────────────────┐                │
-│  │    Refinement Instruction Generator      │                │
-│  │  • Specific, actionable instructions    │                │
+│  │     Prompt Improvement Generator         │                │
+│  │  • Specific prompt enhancements          │                │
 │  │  • Prioritized by importance            │                │
 │  │  • Context-aware suggestions            │                │
 │  └─────────────────────────────────────────┘                │
@@ -66,16 +66,15 @@ The Image Evaluator Agent automates the quality control process by comparing gen
                            │                                  │
                            ▼                                  ▼
                     ┌─────────────┐                   ┌──────────────┐
-                    │  Approved   │                   │  Refinement  │
-                    │   (Save)    │                   │ Instructions │
+                    │  Approved   │                   │    Prompt    │
+                    │   (Save)    │                   │ Improvements │
                     └─────────────┘                   └──────┬───────┘
                                                             │
                                                             ▼
                                                     ┌──────────────┐
                                                     │  Image Gen   │
                                                     │    Agent     │
-                                                    │ (Continue    │
-                                                    │ Conversation)│
+                                                    │ (Regenerate) │
                                                     └──────────────┘
 ```
 
@@ -101,7 +100,7 @@ class VisualComparisonEngine:
         
     async def compare_images(self, 
                            reference_image: str,
-                           generated_image: str,
+                           generated_image_data: bytes,
                            comparison_context: Dict) -> ComparisonResult:
         """Perform comprehensive comparison between images."""
         
@@ -109,7 +108,8 @@ class VisualComparisonEngine:
         analysis_prompt = self._build_comparison_prompt(comparison_context)
         
         vision_response = await self.vision_model.analyze(
-            images=[reference_image, generated_image],
+            reference_image=reference_image,
+            generated_image=generated_image_data,
             prompt=analysis_prompt
         )
         
@@ -121,7 +121,7 @@ class VisualComparisonEngine:
         for metric_func in self.comparison_metrics:
             metric_results[metric_func.__name__] = await metric_func(
                 reference_image, 
-                generated_image,
+                generated_image_data,
                 vision_response
             )
             
@@ -170,49 +170,58 @@ class EvaluationScorer:
         )
 ```
 
-### 3. Refinement Instruction Generation
+### 3. Prompt Improvement Generation
 
 ```python
-class RefinementInstructionGenerator:
-    """Generates specific instructions for image refinement."""
+class PromptImprovementGenerator:
+    """Generates prompt improvements based on evaluation results."""
     
     def __init__(self):
-        self.instruction_templates = self._load_instruction_templates()
+        self.improvement_strategies = self._load_improvement_strategies()
         
-    async def generate_instructions(self,
-                                  comparison_result: ComparisonResult,
-                                  evaluation_score: EvaluationScore) -> List[RefinementInstruction]:
-        """Generate prioritized refinement instructions."""
+    async def generate_prompt_improvements(self,
+                                         comparison_result: ComparisonResult,
+                                         evaluation_score: EvaluationScore,
+                                         current_prompt: str) -> PromptImprovements:
+        """Generate specific prompt improvements."""
         
-        instructions = []
+        improvements = []
         
         # Analyze differences and low-scoring areas
         issues = self._identify_issues(comparison_result, evaluation_score)
         
         for issue in issues:
-            instruction = self._create_instruction(issue)
-            instructions.append(instruction)
+            improvement = self._create_prompt_improvement(issue, current_prompt)
+            improvements.append(improvement)
             
-        # Prioritize instructions
-        prioritized = self._prioritize_instructions(instructions)
+        # Prioritize improvements
+        prioritized = self._prioritize_improvements(improvements)
         
-        # Limit to top N most important
-        return prioritized[:self.config.max_instructions_per_round]
-        
-    def _create_instruction(self, issue: Issue) -> RefinementInstruction:
-        """Create specific instruction for an issue."""
-        
-        template = self.instruction_templates.get(issue.type, self.default_template)
-        
-        instruction_text = template.format(
-            element=issue.element,
-            current_state=issue.current_state,
-            desired_state=issue.desired_state,
-            specific_action=issue.suggested_action
+        # Build enhanced prompt
+        enhanced_prompt = self._build_enhanced_prompt(
+            current_prompt,
+            prioritized[:self.config.max_improvements_per_round]
         )
         
-        return RefinementInstruction(
-            text=instruction_text,
+        return PromptImprovements(
+            original_prompt=current_prompt,
+            enhanced_prompt=enhanced_prompt,
+            specific_improvements=prioritized,
+            expected_impact=self._estimate_impact(prioritized)
+        )
+        
+    def _create_prompt_improvement(self, issue: Issue, current_prompt: str) -> PromptImprovement:
+        """Create specific prompt improvement for an issue."""
+        
+        strategy = self.improvement_strategies.get(issue.type)
+        
+        improvement_text = strategy.generate_improvement(
+            issue=issue,
+            current_prompt=current_prompt
+        )
+        
+        return PromptImprovement(
+            text=improvement_text,
             priority=issue.priority,
             issue_type=issue.type,
             expected_impact=issue.impact_score
@@ -233,49 +242,55 @@ class ImageGenerationWithEvaluation:
         self.product_id = product_id
         self.image_agent = ImageGenerationAgent(product_id)
         self.evaluator_agent = ImageEvaluatorAgent(product_id)
-        self.max_refinement_rounds = 5
+        self.max_attempts = 5
         
     async def generate_with_auto_approval(self,
-                                        reference_image: str,
+                                        reference_images: List[str],
                                         initial_prompt: str,
                                         requirements: ProductRequirements) -> ApprovedImage:
-        """Generate image with automatic evaluation and refinement."""
+        """Generate image with automatic evaluation and prompt refinement."""
         
-        # Start image generation session
-        session = await self.image_agent.conversation_manager.start_session(
+        # Initialize tracking
+        session = GenerationSession(
             product_id=self.product_id,
+            reference_images=reference_images,
             initial_prompt=initial_prompt
         )
         
-        refinement_round = 0
+        current_prompt = initial_prompt
         approved = False
+        attempt = 0
         
-        while not approved and refinement_round < self.max_refinement_rounds:
-            # Get latest generated image
-            latest_image = session.generated_images[-1]
+        while not approved and attempt < self.max_attempts:
+            # Generate image with current prompt
+            result = await self.image_agent.generate_with_prompt(
+                reference_images=reference_images,
+                prompt=current_prompt
+            )
             
-            # Evaluate against reference
+            session.add_attempt(result)
+            
+            # Evaluate generated image
             evaluation = await self.evaluator_agent.evaluate(
-                reference_image=reference_image,
-                generated_image=latest_image.stored_url,
-                requirements=requirements
+                reference_image=reference_images[0],
+                generated_image_data=result.image_data,
+                requirements=requirements,
+                current_prompt=current_prompt
             )
             
             if evaluation.approved:
                 approved = True
                 break
                 
-            # Generate refinement instructions
-            instructions = await self.evaluator_agent.generate_refinements(evaluation)
+            # Get prompt improvements
+            improvements = await self.evaluator_agent.generate_improvements(
+                evaluation=evaluation,
+                current_prompt=current_prompt
+            )
             
-            # Apply refinements
-            for instruction in instructions:
-                result = await self.image_agent.conversation_manager.continue_session(
-                    session_id=session.session_id,
-                    instruction=instruction.text
-                )
-                
-            refinement_round += 1
+            # Update prompt for next attempt
+            current_prompt = improvements.enhanced_prompt
+            attempt += 1
             
         # Handle approval or escalation
         if approved:
@@ -284,34 +299,56 @@ class ImageGenerationWithEvaluation:
             return await self._escalate_for_human_review(session, evaluation)
 ```
 
-### 2. Session Integration
+### 2. Evaluation Feedback Structure
 
 ```python
-class EvaluatorSessionExtension:
-    """Extends image generation sessions with evaluation data."""
+@dataclass
+class EvaluationFeedback:
+    """Structured feedback from evaluation for prompt improvement."""
     
-    @dataclass
-    class EvaluationSession:
-        session_id: str
-        reference_image_id: str
-        evaluations: List[EvaluationResult]
-        refinement_history: List[RefinementRound]
-        final_score: Optional[float]
-        approval_status: str
+    issues: List[EvaluationIssue]
+    overall_score: float
+    specific_improvements: List[str]
+    
+@dataclass
+class EvaluationIssue:
+    """Specific issue found during evaluation."""
+    
+    type: str  # "color_mismatch", "detail_missing", "composition_error", etc.
+    element: str  # What part of the image
+    current_state: str  # What it looks like now
+    target_state: str  # What it should look like
+    severity: str  # "high", "medium", "low"
+    suggested_prompt_addition: str
+
+class FeedbackProcessor:
+    """Processes evaluation feedback into actionable prompt improvements."""
+    
+    def process_for_prompt_enhancement(self,
+                                     evaluation: EvaluationResult) -> List[str]:
+        """Convert evaluation results into prompt improvements."""
         
-    async def track_evaluation_progress(self,
-                                      generation_session: ImageGenerationSession,
-                                      evaluation_session: EvaluationSession):
-        """Track evaluation progress alongside generation."""
+        improvements = []
         
-        # Link sessions
-        generation_session.evaluation_session_id = evaluation_session.session_id
-        
-        # Store evaluation data
-        await self.store_evaluation_session(evaluation_session)
-        
-        # Update metrics
-        await self.update_evaluation_metrics(evaluation_session)
+        for issue in evaluation.feedback.issues:
+            if issue.type == "color_mismatch":
+                improvements.append(
+                    f"Ensure the {issue.element} is exactly {issue.target_state} color"
+                )
+            elif issue.type == "detail_missing":
+                improvements.append(
+                    f"Include {issue.element} detail as shown in reference"
+                )
+            elif issue.type == "composition_error":
+                improvements.append(
+                    f"Adjust composition to {issue.target_state}"
+                )
+            elif issue.type == "lighting_issue":
+                improvements.append(
+                    f"Use {issue.target_state} lighting style"
+                )
+                
+        return improvements
 ```
 
 ---
@@ -329,21 +366,22 @@ class ImageEvaluatorAgent(BaseProductAgent):
         self.config = config
         self.comparison_engine = VisualComparisonEngine()
         self.scorer = EvaluationScorer(config)
-        self.instruction_generator = RefinementInstructionGenerator()
+        self.improvement_generator = PromptImprovementGenerator()
         
         # Initialize vision model based on config
         self.vision_model = self._init_vision_model()
         
     async def evaluate(self,
                       reference_image: str,
-                      generated_image: str,
-                      requirements: ProductRequirements) -> EvaluationResult:
+                      generated_image_data: bytes,
+                      requirements: ProductRequirements,
+                      current_prompt: str) -> EvaluationResult:
         """Evaluate generated image against reference."""
         
         # Perform visual comparison
         comparison = await self.comparison_engine.compare_images(
             reference_image=reference_image,
-            generated_image=generated_image,
+            generated_image_data=generated_image_data,
             comparison_context={
                 "product_id": self.product_id,
                 "requirements": requirements.dict(),
@@ -357,33 +395,39 @@ class ImageEvaluatorAgent(BaseProductAgent):
         # Make decision
         decision = self._make_decision(score)
         
+        # Generate feedback
+        feedback = await self._generate_feedback(comparison, score, current_prompt)
+        
         return EvaluationResult(
             comparison=comparison,
             score=score,
             decision=decision,
             approved=decision == "approve",
             confidence=score.confidence,
+            feedback=feedback,
             timestamp=datetime.utcnow()
         )
         
-    async def generate_refinements(self, 
-                                 evaluation: EvaluationResult) -> List[RefinementInstruction]:
-        """Generate specific refinement instructions based on evaluation."""
+    async def generate_improvements(self, 
+                                  evaluation: EvaluationResult,
+                                  current_prompt: str) -> PromptImprovements:
+        """Generate prompt improvements based on evaluation."""
         
         if evaluation.approved:
-            return []
+            return PromptImprovements(
+                original_prompt=current_prompt,
+                enhanced_prompt=current_prompt,
+                specific_improvements=[],
+                expected_impact=0
+            )
             
-        instructions = await self.instruction_generator.generate_instructions(
+        improvements = await self.improvement_generator.generate_prompt_improvements(
             comparison_result=evaluation.comparison,
-            evaluation_score=evaluation.score
+            evaluation_score=evaluation.score,
+            current_prompt=current_prompt
         )
         
-        # Add context for better refinement
-        contextualized = []
-        for instruction in instructions:
-            contextualized.append(self._add_context(instruction, evaluation))
-            
-        return contextualized
+        return improvements
         
     def _init_vision_model(self):
         """Initialize vision model based on configuration."""
@@ -404,8 +448,8 @@ class ImageEvaluatorAgent(BaseProductAgent):
             else:
                 return "approve_with_review"  # Approve but flag for human verification
                 
-        elif score.overall >= self.config.refinement_threshold:
-            return "refine"
+        elif score.overall >= self.config.improvement_threshold:
+            return "improve"  # Generate prompt improvements
             
         else:
             return "escalate"  # Too far off, needs human intervention
@@ -420,8 +464,14 @@ class GPT4VisionModel:
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
         
-    async def analyze(self, images: List[str], prompt: str) -> VisionAnalysis:
+    async def analyze(self, 
+                     reference_image: str,
+                     generated_image: bytes,
+                     prompt: str) -> VisionAnalysis:
         """Analyze images using GPT-4 Vision."""
+        
+        # Convert generated image to base64
+        generated_b64 = base64.b64encode(generated_image).decode('utf-8')
         
         # Prepare messages with images
         messages = [
@@ -429,7 +479,14 @@ class GPT4VisionModel:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": prompt},
-                    *[{"type": "image_url", "image_url": {"url": img}} for img in images]
+                    {
+                        "type": "image_url", 
+                        "image_url": {"url": reference_image}
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{generated_b64}"}
+                    }
                 ]
             }
         ]
@@ -448,18 +505,6 @@ class GPT4VisionModel:
             structured_data=analysis,
             model="gpt-4-vision"
         )
-        
-    def _parse_response(self, response_text: str) -> Dict:
-        """Parse vision model response into structured data."""
-        
-        # Use structured parsing or JSON mode if available
-        try:
-            # Attempt to extract JSON if response is formatted
-            import json
-            return json.loads(response_text)
-        except:
-            # Fall back to text parsing
-            return self._parse_text_response(response_text)
 ```
 
 ---
@@ -511,59 +556,35 @@ class EvaluationCriteria:
     }
 ```
 
-### 2. Scoring Configuration
+### 2. Prompt Improvement Strategies
 
 ```python
-class EvaluatorConfig(BaseModel):
-    """Configuration for image evaluator agent."""
+class PromptImprovementStrategies:
+    """Strategies for improving prompts based on evaluation issues."""
     
-    # Model selection
-    vision_model: str = "gpt-4-vision"  # or "claude-3-vision"
-    
-    # Scoring thresholds
-    approval_threshold: float = 0.85
-    refinement_threshold: float = 0.60
-    confidence_threshold: float = 0.80
-    
-    # Scoring weights
-    scoring_weights: Dict[str, float] = {
-        "visual_similarity": 0.30,
-        "product_accuracy": 0.40,
-        "brand_compliance": 0.20,
-        "technical_quality": 0.10
+    COLOR_MISMATCH = {
+        "template": "Make sure the {element} is exactly {target_color} as shown in the reference image",
+        "priority": "high"
     }
     
-    # Refinement settings
-    max_refinement_rounds: int = 5
-    max_instructions_per_round: int = 3
+    DETAIL_MISSING = {
+        "template": "Include the {detail} on the {location} matching the reference image exactly",
+        "priority": "high"
+    }
     
-    # Brand guidelines
-    brand_guidelines: Dict[str, Any] = {}
+    COMPOSITION_ERROR = {
+        "template": "Position the product {adjustment} to match the reference composition",
+        "priority": "medium"
+    }
     
-    # Evaluation prompts (customizable)
-    evaluation_prompts: Dict[str, str] = {
-        "comparison": """
-        Compare these two images:
-        1. Reference image (first image)
-        2. Generated image (second image)
-        
-        Analyze the following aspects:
-        - Overall visual similarity (0-100%)
-        - Product accuracy and details
-        - Composition and framing
-        - Color accuracy
-        - Lighting and shadows
-        - Brand compliance
-        
-        Identify specific differences and suggest improvements.
-        Format response as JSON with similarity_score, differences[], and suggestions[].
-        """,
-        
-        "detailed_analysis": """
-        Perform detailed analysis of the generated image compared to the reference.
-        Focus on: {focus_areas}
-        Requirements: {requirements}
-        """
+    LIGHTING_ISSUE = {
+        "template": "Apply {lighting_style} lighting with {specific_characteristics}",
+        "priority": "medium"
+    }
+    
+    TEXTURE_INCORRECT = {
+        "template": "The {element} should have a {target_texture} texture/finish",
+        "priority": "medium"
     }
 ```
 
@@ -575,7 +596,7 @@ class EvaluatorConfig(BaseModel):
 
 ```python
 # Complete automated workflow
-async def automated_product_image_workflow(product_id: str, reference_image: str):
+async def automated_product_image_workflow(product_id: str, reference_images: List[str]):
     """End-to-end automated image generation with evaluation."""
     
     # Initialize agents
@@ -585,39 +606,50 @@ async def automated_product_image_workflow(product_id: str, reference_image: str
     # Load product requirements
     requirements = await load_product_requirements(product_id)
     
-    # Generate initial image
-    session = await gen_agent.start_session(
-        initial_prompt=f"Product photography of {requirements.product_name}..."
-    )
+    # Build initial prompt
+    initial_prompt = f"""Professional product photography of {requirements.product_name}.
+    Features: {', '.join(requirements.key_features[:3])}.
+    Style: Clean, modern, professional.
+    Background: Pure white.
+    Lighting: Studio lighting with soft shadows."""
     
     # Evaluation loop
-    for round in range(5):
-        latest_image = session.generated_images[-1]
+    current_prompt = initial_prompt
+    
+    for attempt in range(5):
+        # Generate image
+        result = await gen_agent.generate_from_reference(
+            reference_images=reference_images,
+            prompt=current_prompt
+        )
         
         # Evaluate
         evaluation = await eval_agent.evaluate(
-            reference_image=reference_image,
-            generated_image=latest_image.url,
-            requirements=requirements
+            reference_image=reference_images[0],
+            generated_image_data=result.image_data,
+            requirements=requirements,
+            current_prompt=current_prompt
         )
         
         if evaluation.approved:
             # Save approved image
-            await save_approved_image(latest_image, evaluation)
-            return {"status": "approved", "image": latest_image, "rounds": round + 1}
+            await save_approved_image(result, evaluation)
+            return {"status": "approved", "image": result, "attempts": attempt + 1}
             
-        # Get refinement instructions
-        refinements = await eval_agent.generate_refinements(evaluation)
+        # Get prompt improvements
+        improvements = await eval_agent.generate_improvements(
+            evaluation=evaluation,
+            current_prompt=current_prompt
+        )
         
-        # Apply refinements
-        for instruction in refinements:
-            await gen_agent.refine_image(session.session_id, instruction.text)
+        # Update prompt for next attempt
+        current_prompt = improvements.enhanced_prompt
             
-    # Max rounds reached - escalate
-    return {"status": "escalated", "reason": "max_rounds_exceeded"}
+    # Max attempts reached - escalate
+    return {"status": "escalated", "reason": "max_attempts_exceeded"}
 ```
 
-### Example 2: Specific Issue Detection and Refinement
+### Example 2: Specific Issue Detection and Prompt Enhancement
 
 ```python
 # Example evaluation result with specific issues
@@ -647,12 +679,15 @@ evaluation_result = {
     ]
 }
 
-# Generated refinement instructions
-refinement_instructions = [
-    "Change the bottle cap material to natural bamboo wood with visible grain texture",
-    "Lighten the bottle body color to match the reference matte black finish",
-    "Ensure the bamboo cap has the characteristic light brown color with natural variations"
-]
+# Generated prompt improvements
+original_prompt = "Professional product photo of eco-friendly water bottle..."
+
+enhanced_prompt = """Professional product photo of eco-friendly water bottle...
+
+IMPORTANT CORRECTIONS:
+- Make sure the bottle cap is natural bamboo wood with visible grain texture, NOT metallic
+- The bottle body should be a lighter matte black color matching the reference exactly
+- Ensure all materials match the reference image precisely"""
 ```
 
 ---
@@ -667,81 +702,33 @@ class OptimizedVisionAnalysis:
     
     def __init__(self):
         self.cache = TTLCache(maxsize=100, ttl=3600)
-        self.batch_size = 5
+        self.quick_check = QuickImageValidator()
         
-    async def analyze_with_caching(self, 
-                                  reference_image: str,
-                                  generated_image: str) -> VisionAnalysis:
-        """Analyze with caching to reduce API calls."""
+    async def analyze_with_optimization(self, 
+                                      reference_image: str,
+                                      generated_image: bytes) -> VisionAnalysis:
+        """Analyze with optimizations to reduce API calls."""
         
-        # Generate cache key
+        # Quick technical checks first (cheap)
+        quick_result = await self.quick_check.validate(generated_image)
+        if not quick_result.passed:
+            return self._quick_rejection(quick_result)
+            
+        # Check cache for similar comparisons
         cache_key = self._generate_cache_key(reference_image, generated_image)
-        
-        # Check cache
         if cache_key in self.cache:
             return self.cache[cache_key]
             
-        # Perform analysis
-        result = await self._perform_analysis(reference_image, generated_image)
+        # Perform full vision analysis
+        result = await self._perform_full_analysis(reference_image, generated_image)
         
         # Cache result
         self.cache[cache_key] = result
         
         return result
-        
-    async def batch_analyze(self, image_pairs: List[Tuple[str, str]]) -> List[VisionAnalysis]:
-        """Batch multiple comparisons for efficiency."""
-        
-        results = []
-        
-        for i in range(0, len(image_pairs), self.batch_size):
-            batch = image_pairs[i:i + self.batch_size]
-            batch_results = await self._analyze_batch(batch)
-            results.extend(batch_results)
-            
-        return results
 ```
 
-### 2. Selective Evaluation Strategy
-
-```python
-class SelectiveEvaluator:
-    """Implements selective evaluation to reduce costs."""
-    
-    def __init__(self, config: SelectiveEvaluationConfig):
-        self.config = config
-        self.quick_check_threshold = config.quick_check_threshold
-        
-    async def should_deep_evaluate(self, 
-                                 generated_image: str,
-                                 quick_metrics: Dict) -> bool:
-        """Determine if deep evaluation is needed."""
-        
-        # Quick checks using basic computer vision
-        if quick_metrics["technical_quality"] < self.quick_check_threshold:
-            return True  # Definitely needs evaluation
-            
-        # Check if image matches basic requirements
-        if not self._passes_basic_requirements(quick_metrics):
-            return True
-            
-        # Random sampling for quality assurance
-        if random.random() < self.config.sampling_rate:
-            return True
-            
-        return False
-        
-    def _passes_basic_requirements(self, metrics: Dict) -> bool:
-        """Check basic requirements without vision model."""
-        
-        return all([
-            metrics["resolution"] >= self.config.min_resolution,
-            metrics["aspect_ratio"] == self.config.required_aspect_ratio,
-            metrics["file_size"] < self.config.max_file_size
-        ])
-```
-
-### 3. Progressive Evaluation
+### 2. Progressive Evaluation
 
 ```python
 class ProgressiveEvaluator:
@@ -749,18 +736,18 @@ class ProgressiveEvaluator:
     
     async def evaluate_progressive(self,
                                  reference_image: str,
-                                 generated_image: str) -> EvaluationResult:
+                                 generated_image: bytes) -> EvaluationResult:
         """Progressively evaluate from cheap to expensive checks."""
         
         # Level 1: Basic technical checks (fast, cheap)
         technical_check = await self.check_technical_quality(generated_image)
         if not technical_check.passed:
-            return self._quick_reject(technical_check)
+            return self._quick_reject_with_prompt_suggestion(technical_check)
             
         # Level 2: Basic visual similarity (medium cost)
         basic_similarity = await self.check_basic_similarity(reference_image, generated_image)
         if basic_similarity.score < 0.5:
-            return self._early_refinement(basic_similarity)
+            return self._early_improvement_suggestion(basic_similarity)
             
         # Level 3: Full vision model evaluation (expensive)
         full_evaluation = await self.full_vision_evaluation(reference_image, generated_image)
@@ -772,94 +759,102 @@ class ProgressiveEvaluator:
 
 ## Storage Architecture Integration
 
-### Image Storage Strategy
+### Evaluation Data Storage
 
 ```python
 class EvaluatorStorageStrategy:
-    """Storage strategy optimized for evaluation workflow."""
+    """Storage strategy for evaluation workflow."""
     
     def __init__(self, storage_backend: StorageBackend):
         self.storage = storage_backend
         
-    async def store_evaluation_images(self, evaluation_session: EvaluationSession):
-        """Store only necessary images from evaluation."""
+    async def store_evaluation_data(self, session: EvaluationSession):
+        """Store evaluation data efficiently."""
         
-        # Store reference image (if not already stored)
-        reference_url = await self.storage.store_reference(
-            image=evaluation_session.reference_image,
-            product_id=evaluation_session.product_id,
-            metadata={
-                "type": "reference",
-                "uploaded_by": evaluation_session.user_id,
-                "uploaded_at": datetime.utcnow()
+        # Store evaluation results
+        await self.storage.store_evaluation(
+            session_id=session.session_id,
+            evaluation_data={
+                "scores": session.evaluation_scores,
+                "decisions": session.decisions,
+                "prompt_history": session.prompt_history,
+                "final_result": session.final_result
             }
         )
         
         # Store ONLY the final approved image
-        if evaluation_session.approved_image:
-            final_url = await self.storage.store_final(
-                image=evaluation_session.approved_image,
-                product_id=evaluation_session.product_id,
+        if session.approved:
+            await self.storage.store_final_image(
+                image_data=session.approved_image_data,
                 metadata={
-                    "type": "generated_final",
-                    "reference_image": reference_url,
-                    "generation_session": evaluation_session.generation_session_id,
-                    "evaluation_score": evaluation_session.final_score,
-                    "approved_at": datetime.utcnow()
+                    "evaluation_score": session.final_score,
+                    "attempts": session.attempt_count,
+                    "final_prompt": session.final_prompt
                 }
             )
-            
-        # Clean up intermediate images
-        await self._cleanup_intermediate_images(evaluation_session)
-        
-    async def _cleanup_intermediate_images(self, session: EvaluationSession):
-        """Remove intermediate images to save storage costs."""
-        
-        # Delete all non-approved generated images
-        for image in session.intermediate_images:
-            await self.storage.delete_temporary(image.temp_url)
 ```
 
 ---
 
-## Configuration Examples
+## Configuration
 
-### 1. Strict Quality Configuration
-
-```python
-strict_config = EvaluatorConfig(
-    vision_model="gpt-4-vision",
-    approval_threshold=0.90,
-    refinement_threshold=0.70,
-    confidence_threshold=0.85,
-    scoring_weights={
-        "visual_similarity": 0.25,
-        "product_accuracy": 0.45,  # Higher weight on accuracy
-        "brand_compliance": 0.25,
-        "technical_quality": 0.05
-    },
-    max_refinement_rounds=7,
-    max_instructions_per_round=2
-)
-```
-
-### 2. Fast Iteration Configuration
+### 1. Evaluator Configuration
 
 ```python
-fast_config = EvaluatorConfig(
-    vision_model="gpt-4-vision",
-    approval_threshold=0.80,
-    refinement_threshold=0.60,
-    confidence_threshold=0.75,
-    scoring_weights={
-        "visual_similarity": 0.40,  # Focus on overall look
-        "product_accuracy": 0.30,
+class EvaluatorConfig(BaseModel):
+    """Configuration for image evaluator agent."""
+    
+    # Model selection
+    vision_model: str = "gpt-4-vision"  # or "claude-3-vision"
+    
+    # Scoring thresholds
+    approval_threshold: float = 0.85
+    improvement_threshold: float = 0.60
+    confidence_threshold: float = 0.80
+    
+    # Scoring weights
+    scoring_weights: Dict[str, float] = {
+        "visual_similarity": 0.30,
+        "product_accuracy": 0.40,
         "brand_compliance": 0.20,
         "technical_quality": 0.10
-    },
-    max_refinement_rounds=3,
-    max_instructions_per_round=3
-)
+    }
+    
+    # Improvement settings
+    max_improvement_attempts: int = 5
+    max_improvements_per_round: int = 3
+    
+    # Brand guidelines
+    brand_guidelines: Dict[str, Any] = {}
+    
+    # Evaluation prompts (customizable)
+    evaluation_prompts: Dict[str, str] = {
+        "comparison": """
+        Compare these two product images:
+        1. Reference image (first image)
+        2. Generated image (second image)
+        
+        Analyze the following aspects:
+        - Overall visual similarity (0-100%)
+        - Product accuracy and details
+        - Composition and framing
+        - Color accuracy
+        - Lighting and shadows
+        - Brand compliance
+        
+        Identify specific differences and suggest prompt improvements.
+        Format response as JSON with similarity_score, differences[], and prompt_suggestions[].
+        """,
+        
+        "detailed_analysis": """
+        Perform detailed analysis of the generated image compared to the reference.
+        Focus on: {focus_areas}
+        Requirements: {requirements}
+        Current prompt: {current_prompt}
+        
+        Suggest specific prompt additions or modifications to fix any issues.
+        """
+    }
 ```
 
 ---
@@ -874,9 +869,9 @@ class EvaluatorMetrics:
         self.metrics = {
             "evaluations_total": Counter(),
             "approvals": Counter(),
-            "refinements": Counter(),
+            "improvements_generated": Counter(),
             "escalations": Counter(),
-            "avg_rounds_to_approval": Histogram(),
+            "avg_attempts_to_approval": Histogram(),
             "evaluation_time": Histogram(),
             "vision_api_calls": Counter(),
             "vision_api_cost": Counter()
@@ -889,26 +884,29 @@ class EvaluatorMetrics:
         
         if session.approved:
             self.metrics["approvals"].inc()
-            self.metrics["avg_rounds_to_approval"].observe(session.refinement_rounds)
+            self.metrics["avg_attempts_to_approval"].observe(session.attempt_count)
         elif session.escalated:
             self.metrics["escalations"].inc()
             
         self.metrics["evaluation_time"].observe(session.duration_seconds)
         self.metrics["vision_api_calls"].inc(session.api_calls_made)
-        self.metrics["vision_api_cost"].inc(session.estimated_cost)
+        
+        # Estimate cost
+        cost = session.api_calls_made * 0.01  # ~$0.01 per vision API call
+        self.metrics["vision_api_cost"].inc(cost)
 ```
 
 ---
 
 ## Conclusion
 
-The Image Evaluator Agent creates an intelligent quality control system that dramatically reduces the need for human intervention in the image generation process. By comparing generated images against references and providing specific refinement instructions, it enables a closed-loop system that consistently produces high-quality, brand-compliant images.
+The Image Evaluator Agent creates an intelligent quality control system that works seamlessly with the simplified Image Generation Agent. By comparing generated images against references and providing specific prompt improvements, it enables an efficient closed-loop system that consistently produces high-quality, brand-compliant images.
 
 Key benefits:
-1. **Automation**: Reduces manual review from 100% to <10% of images
-2. **Consistency**: Ensures all images meet quality standards
-3. **Speed**: Automated refinement cycles complete in minutes vs hours
-4. **Cost Efficiency**: Optimized vision model usage and storage
-5. **Scalability**: Handles multiple products and images concurrently
+1. **Simplified Integration**: Works with direct image generation approach
+2. **Prompt Optimization**: Generates specific prompt improvements instead of conversational refinements
+3. **Cost Efficiency**: Progressive evaluation reduces unnecessary API calls
+4. **High Success Rate**: Targeted prompt improvements lead to faster approval
+5. **Minimal Storage**: Only approved images are permanently stored
 
-The integration with the Image Generation Agent creates a powerful system for autonomous product image creation that maintains high quality while minimizing costs.
+The system maintains high quality standards while minimizing human intervention and operational costs.

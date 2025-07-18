@@ -544,7 +544,7 @@ class PricingAgent:
 - E-commerce platform APIs (Shopify, WooCommerce)
 - Supplier APIs or email automation
 - Shipping carrier APIs
-- Inventory management systems
+- Inventory1 management systems
 
 #### 6. Customer Service Agent
 

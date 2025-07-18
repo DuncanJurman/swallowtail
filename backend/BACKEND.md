@@ -363,6 +363,7 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 8. **Vector Database**: Pinecone integration for similarity search and embeddings
 9. **Persistent Storage**: PostgreSQL database via Supabase for business data
 10. **Database Migrations**: Alembic for schema version control
+11. **Image Generation**: AI-powered product image generation with quality evaluation
 
 ## Research Workshop
 
@@ -413,6 +414,182 @@ ALTER TABLE market_opportunities ADD:
     - sourcing_options JSONB
     - discovery_date TIMESTAMP
     - review tracking fields
+```
+
+## Image Generation System
+
+### Overview
+The image generation system uses OpenAI's gpt-image-1 model to create high-quality product images based on reference images. It includes automatic quality evaluation using structured outputs and iterative improvement through feedback loops.
+
+### Key Features
+- **Structured Output Integration**: Uses OpenAI's structured output feature with Pydantic models for type-safe, consistent evaluation results
+- **Detailed Scoring System**: Breaks down evaluation into visual fidelity, prompt accuracy, technical quality, and product accuracy
+- **Metadata Propagation**: Detailed scores flow through the entire system from evaluation to API responses
+- **Automatic Refinement**: Feedback-driven regeneration based on specific improvement suggestions
+
+### Components
+
+#### Services
+
+##### `src/services/openai_image_service.py`
+- **Purpose**: OpenAI API integration for image generation and structured evaluation
+- **Key Features**:
+  - Image generation using `images.edit` endpoint with gpt-image-1 model
+  - Structured image evaluation using GPT-4 vision with `client.chat.completions.parse()`
+  - Type-safe evaluation responses using Pydantic models
+  - Automatic image preparation and optimization
+- **Key Models**:
+  - `ImageEvaluationResponse`: Pydantic model defining structured evaluation output
+    - `overall_score`: Overall quality score (0-100)
+    - `visual_fidelity_score`: How well it matches the reference (0-100)
+    - `prompt_accuracy_score`: How well it follows the prompt (0-100)
+    - `technical_quality_score`: Sharpness, lighting, composition (0-100)
+    - `product_accuracy_score`: Product detail accuracy (0-100)
+    - `issues`: List of specific issues found
+    - `improvements`: List of suggested improvements
+- **Main Methods**:
+  - `generate_image()`: Create product images from references
+  - `evaluate_images()`: Structured evaluation with detailed scoring breakdown
+  - `prepare_image()`: Optimize images for API constraints
+
+#### Agents
+
+##### `src/agents/image_generation.py`
+- **Purpose**: CrewAI agent for product image generation
+- **Key Features**:
+  - Reference-based image generation
+  - Feedback-based regeneration
+  - CrewAI task integration
+- **Main Methods**:
+  - `execute()`: CrewAI execution interface
+  - `_generate_from_reference()`: Initial image generation
+  - `_regenerate_with_feedback()`: Improved generation with feedback
+
+##### `src/agents/image_evaluator.py`
+- **Purpose**: CrewAI agent for image quality evaluation with structured output support
+- **Key Features**:
+  - Visual fidelity assessment using structured evaluation
+  - Prompt adherence checking with detailed scoring
+  - Specific improvement suggestions from structured feedback
+  - Metadata propagation through `AgentResult`
+- **Main Methods**:
+  - `execute()`: CrewAI execution interface with metadata support
+  - `_evaluate_generated_image()`: Structured quality scoring using Pydantic models
+- **Metadata Propagation**:
+  - Extracts detailed scores from structured evaluation
+  - Passes scores through `AgentResult.metadata` field
+  - Includes: visual_fidelity_score, prompt_accuracy_score, technical_quality_score, product_accuracy_score, issues
+
+#### Workflows
+
+##### `src/workflows/image_generation_workflow.py`
+- **Purpose**: Orchestrates the complete image generation pipeline with structured output support
+- **Key Features**:
+  - Automatic retry with feedback loop using structured improvement suggestions
+  - Configurable quality thresholds with detailed score tracking
+  - Enhanced logging of all evaluation scores
+  - CrewAI Crew integration option
+- **Main Methods**:
+  - `generate_product_image()`: Main workflow with automatic refinement and detailed score logging
+  - `generate_with_crew()`: Alternative CrewAI Crew-based approach
+- **Enhanced Features**:
+  - Logs detailed evaluation scores for each attempt
+  - Propagates metadata through to API responses
+  - Tracks issues found during evaluation
+  - Returns comprehensive detailed_scores in response
+
+#### API Endpoints
+
+##### `src/api/routes/image_generation.py`
+- **Endpoints**:
+  - `POST /api/v1/images/generate`: Synchronous image generation with detailed scoring
+  - `POST /api/v1/images/generate-async`: Asynchronous generation (placeholder)
+  - `GET /api/v1/images/status/{task_id}`: Check async task status
+- **Request Model**:
+  ```python
+  {
+    "product_id": "string",
+    "reference_image_url": "string",
+    "product_name": "string", 
+    "product_features": ["string"],
+    "style_requirements": {"key": "value"},
+    "approval_threshold": 0.85,
+    "max_attempts": 3
+  }
+  ```
+- **Response Model with Detailed Scores**:
+  ```python
+  {
+    "success": bool,
+    "image_url": "string",  # URL of approved image
+    "score": float,         # Overall score (0-1)
+    "attempts": int,        # Number of attempts made
+    "prompt": "string",     # Final prompt used
+    "detailed_scores": {    # Breakdown of evaluation scores
+      "visual_fidelity": int,    # 0-100
+      "prompt_accuracy": int,    # 0-100
+      "technical_quality": int,  # 0-100
+      "product_accuracy": int    # 0-100
+    }
+  }
+  ```
+
+### Image Generation Flow
+
+1. **Input**: Reference image URL + product details
+2. **Generation**: Use gpt-image-1 to create product image
+3. **Structured Evaluation**: GPT-4 vision with structured output:
+   - Uses `client.chat.completions.parse()` with Pydantic model
+   - Returns type-safe evaluation with detailed scores
+   - Provides specific issues and improvement suggestions
+4. **Decision**:
+   - If overall_score >= threshold: Approve and store with metadata
+   - If overall_score < threshold: Use structured feedback for regeneration
+5. **Iteration**: Up to max_attempts tries with targeted improvements
+6. **Output**: Final approved image URL with detailed scoring breakdown
+
+### Configuration
+
+- **Environment Variables**:
+  - `OPENAI_API_KEY`: Required for image generation
+  - `SUPABASE_URL` & `SUPABASE_SERVICE_KEY`: For image storage
+
+### Testing
+
+- **File**: `tests/workflows/test_image_generation_workflow.py`
+- **Coverage**:
+  - Successful first-attempt generation
+  - Regeneration with feedback
+  - Max attempts handling
+  - Error scenarios
+  - Structured output parsing and validation
+  - Metadata propagation through workflow
+
+### Structured Output Implementation Details
+
+#### Benefits
+1. **Type Safety**: Pydantic models ensure consistent evaluation structure
+2. **Reliable Parsing**: No more regex or string parsing for scores
+3. **Rich Feedback**: Detailed breakdown helps targeted improvements
+4. **Better Observability**: Granular scores for debugging and analytics
+
+#### Technical Implementation
+- Uses OpenAI's `response_format` parameter with Pydantic models
+- Requires GPT-4o-2024-08-06 or later for structured output support
+- Evaluation prompt crafted for consistent structured responses
+- Metadata flows through: Service → Agent → Workflow → API
+
+#### Example Structured Evaluation Response
+```json
+{
+  "overall_score": 88,
+  "visual_fidelity_score": 92,
+  "prompt_accuracy_score": 85,
+  "technical_quality_score": 90,
+  "product_accuracy_score": 86,
+  "issues": ["Slight color mismatch in product finish"],
+  "improvements": ["Adjust color temperature to match reference warmth"]
+}
 ```
 
 ## Next Steps

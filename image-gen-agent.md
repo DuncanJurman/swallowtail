@@ -1,31 +1,30 @@
-# Image Generation Agent Implementation with GPT-Image-1
+# Image Generation Agent Implementation with OpenAI images.edit
 
 ## Executive Summary
 
-This document outlines the implementation strategy for the Image Generation Agent using OpenAI's gpt-image-1 model via the Responses API. This approach enables multi-turn conversations for iterative image refinement, providing superior control over the image generation process compared to traditional single-shot APIs.
+This document outlines the implementation strategy for the Image Generation Agent using OpenAI's `images.edit` endpoint. This approach allows direct reference image input, enabling high-quality product image generation based on existing product photos. The system integrates with the Image Evaluator Agent to create an automated quality control loop.
 
 ## Table of Contents
 1. [Architecture Overview](#architecture-overview)
-2. [API Integration Strategy](#api-integration-strategy)
-3. [Conversation State Management](#conversation-state-management)
-4. [Implementation Details](#implementation-details)
-5. [Workflow Examples](#workflow-examples)
-6. [Configuration and Customization](#configuration-and-customization)
-7. [Best Practices](#best-practices)
-8. [Error Handling and Recovery](#error-handling-and-recovery)
+2. [API Integration](#api-integration)
+3. [Implementation Details](#implementation-details)
+4. [Prompt Optimization](#prompt-optimization)
+5. [Workflow Integration](#workflow-integration)
+6. [Storage Strategy](#storage-strategy)
+7. [Configuration](#configuration)
+8. [Error Handling](#error-handling)
+9. [Performance Considerations](#performance-considerations)
 
 ---
 
 ## Architecture Overview
 
-### Key Advantages of GPT-Image-1 with Responses API
-
-1. **Multi-turn Conversations**: Iterate on images through natural language instructions
-2. **Context Preservation**: Maintain conversation history for coherent refinements
-3. **Superior Instruction Following**: Better understanding of complex requirements
-4. **Real-world Knowledge**: Leverages broader knowledge base for accurate representations
-5. **Text Rendering**: Improved ability to include text in images
-6. **Detailed Editing**: Make specific changes without regenerating entire image
+### Key Advantages
+1. **Direct Reference Input**: Pass product photos directly to generate variations
+2. **Simplified Architecture**: No complex conversation state management
+3. **Better Control**: Image-to-image generation with text prompts
+4. **Cost Efficiency**: Single API call per attempt vs. multi-turn conversations
+5. **Reproducibility**: Easier to reproduce results with fixed inputs
 
 ### System Architecture
 
@@ -35,30 +34,33 @@ This document outlines the implementation strategy for the Image Generation Agen
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────┐    ┌──────────────────┐                │
-│  │   Conversation   │    │    Response      │                │
-│  │     Manager      │◄───┤    Handler       │                │
-│  └────────┬─────────┘    └──────────────────┘                │
-│           │                                                   │
-│           ▼                                                   │
-│  ┌─────────────────┐    ┌──────────────────┐                │
-│  │  GPT-Image-1    │    │   Asset          │                │
-│  │  API Client     │───►│   Storage        │                │
+│  │ Reference Image │    │  Prompt Engine   │                │
+│  │    Manager      │───►│                  │                │
 │  └─────────────────┘    └──────────────────┘                │
-│                                                               │
+│           │                      │                           │
+│           ▼                      ▼                           │
 │  ┌─────────────────────────────────────────┐                │
-│  │         Conversation State Store         │                │
-│  │  • Session tracking                      │                │
-│  │  • Previous response IDs                 │                │
-│  │  • Image history                         │                │
+│  │      OpenAI images.edit API              │                │
+│  │  • Reference image input                 │                │
+│  │  • Text prompt guidance                  │                │
+│  │  • Quality & size parameters             │                │
+│  └─────────────────────────────────────────┘                │
+│                      │                                       │
+│                      ▼                                       │
+│  ┌─────────────────────────────────────────┐                │
+│  │         Generation Tracker               │                │
+│  │  • Attempt tracking                      │                │
+│  │  • Prompt history                        │                │
+│  │  • Quality scores                        │                │
 │  └─────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## API Integration Strategy
+## API Integration
 
-### 1. Primary API: Responses API with Image Generation Tool
+### 1. OpenAI images.edit Client
 
 ```python
 from openai import OpenAI
@@ -66,333 +68,125 @@ import base64
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
+import io
+from PIL import Image
 
 @dataclass
-class ImageGenerationSession:
-    """Tracks a multi-turn image generation conversation."""
-    session_id: str
-    product_id: str
-    conversation_history: List[Dict[str, Any]]
-    current_response_id: Optional[str] = None
-    generated_images: List[Dict[str, Any]] = None
-    created_at: datetime = None
-    updated_at: datetime = None
-    
-    def __post_init__(self):
-        self.generated_images = self.generated_images or []
-        self.created_at = self.created_at or datetime.utcnow()
-        self.updated_at = self.updated_at or datetime.utcnow()
+class ImageGenerationResult:
+    """Result from image generation attempt."""
+    attempt_id: str
+    prompt_used: str
+    image_data: bytes
+    image_url: Optional[str]
+    metadata: Dict[str, Any]
+    created_at: datetime
+    quality_settings: Dict[str, Any]
 
-class GPTImageClient:
-    """Client for GPT-Image-1 using Responses API."""
+class ImageGenerationClient:
+    """Client for OpenAI images.edit endpoint."""
     
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
-        self.model = "gpt-4.1-mini"  # or latest model supporting image generation
+        self.model = "gpt-image-1"
         
-    async def generate_initial_image(self, 
-                                   prompt: str,
-                                   session: ImageGenerationSession) -> Dict[str, Any]:
-        """Generate the first image in a conversation."""
+    async def generate_from_reference(self,
+                                    reference_images: List[bytes],
+                                    prompt: str,
+                                    quality_params: Optional[Dict] = None) -> ImageGenerationResult:
+        """Generate new image based on reference(s) and prompt."""
         
-        response = self.client.responses.create(
-            model=self.model,
-            input=prompt,
-            tools=[{"type": "image_generation"}],
-        )
-        
-        # Process the response
-        result = await self._process_response(response, session)
-        
-        # Update session
-        session.current_response_id = response.id
-        session.conversation_history.append({
-            "role": "user",
-            "content": prompt,
-            "timestamp": datetime.utcnow()
-        })
-        session.conversation_history.append({
-            "role": "assistant",
-            "response_id": response.id,
-            "images": result["images"],
-            "timestamp": datetime.utcnow()
-        })
-        
-        return result
-        
-    async def refine_image(self,
-                          instruction: str,
-                          session: ImageGenerationSession) -> Dict[str, Any]:
-        """Refine an existing image through conversation."""
-        
-        if not session.current_response_id:
-            raise ValueError("No previous response to refine")
-            
-        response = self.client.responses.create(
-            model=self.model,
-            input=instruction,
-            tools=[{"type": "image_generation"}],
-            previous_response_id=session.current_response_id  # Key for multi-turn
-        )
-        
-        # Process and update session
-        result = await self._process_response(response, session)
-        session.current_response_id = response.id
-        session.conversation_history.extend([
-            {"role": "user", "content": instruction, "timestamp": datetime.utcnow()},
-            {"role": "assistant", "response_id": response.id, "images": result["images"], "timestamp": datetime.utcnow()}
-        ])
-        
-        return result
-        
-    async def _process_response(self, response, session: ImageGenerationSession) -> Dict[str, Any]:
-        """Process API response and extract images."""
-        
-        images = []
-        for output in response.output:
-            if output.type == "image_generation_call":
-                # Extract image data
-                image_data = output.result
-                
-                # Handle base64 encoded images
-                if isinstance(image_data, list) and image_data:
-                    for img in image_data:
-                        image_info = {
-                            "id": generate_image_id(),
-                            "base64": img if isinstance(img, str) else None,
-                            "url": None,  # Set if using URL format
-                            "created_at": datetime.utcnow(),
-                            "session_id": session.session_id,
-                            "response_id": response.id
-                        }
-                        
-                        # Store the image
-                        stored_url = await self._store_image(image_info, session.product_id)
-                        image_info["stored_url"] = stored_url
-                        
-                        images.append(image_info)
-                        session.generated_images.append(image_info)
-                        
-        return {
-            "response_id": response.id,
-            "images": images,
-            "raw_response": response
+        # Default quality parameters
+        params = {
+            "size": "1024x1024",
+            "quality": "high",
+            "format": "png",
+            "background": "transparent"
         }
         
-    async def _store_image(self, image_info: Dict, product_id: str) -> str:
-        """Store image and return URL."""
-        # Implementation depends on storage backend (S3, local, etc.)
-        pass
+        if quality_params:
+            params.update(quality_params)
+            
+        # Prepare reference images
+        image_files = []
+        for img_data in reference_images:
+            image_files.append(io.BytesIO(img_data))
+            
+        # Call API
+        try:
+            result = self.client.images.edit(
+                model=self.model,
+                image=image_files,
+                prompt=prompt,
+                **params
+            )
+            
+            # Extract result
+            image_base64 = result.data[0].b64_json
+            image_bytes = base64.b64decode(image_base64)
+            
+            return ImageGenerationResult(
+                attempt_id=generate_attempt_id(),
+                prompt_used=prompt,
+                image_data=image_bytes,
+                image_url=None,  # Will be set after storage
+                metadata={
+                    "model": self.model,
+                    "reference_count": len(reference_images),
+                    "api_response": result.model_dump()
+                },
+                created_at=datetime.utcnow(),
+                quality_settings=params
+            )
+            
+        finally:
+            # Clean up file objects
+            for f in image_files:
+                f.close()
 ```
 
-### 2. Session Management
+### 2. Reference Image Handler
 
 ```python
-class ImageConversationManager:
-    """Manages multi-turn image generation conversations."""
+class ReferenceImageHandler:
+    """Manages reference images for generation."""
     
-    def __init__(self, redis_client, db_session):
-        self.redis = redis_client
-        self.db = db_session
-        self.gpt_client = GPTImageClient(settings.OPENAI_API_KEY)
+    def __init__(self, storage_service: SupabaseStorageService):
+        self.storage = storage_service
         
-    async def start_session(self, product_id: str, initial_prompt: str) -> ImageGenerationSession:
-        """Start a new image generation session."""
+    async def prepare_reference_images(self, 
+                                     product_id: str,
+                                     reference_urls: List[str]) -> List[bytes]:
+        """Download and prepare reference images."""
         
-        session = ImageGenerationSession(
-            session_id=generate_session_id(),
-            product_id=product_id,
-            conversation_history=[]
-        )
-        
-        # Generate initial image
-        result = await self.gpt_client.generate_initial_image(initial_prompt, session)
-        
-        # Store session in Redis for quick access
-        await self._store_session(session)
-        
-        # Also persist to database
-        await self._persist_session(session)
-        
-        return session
-        
-    async def continue_session(self, session_id: str, instruction: str) -> Dict[str, Any]:
-        """Continue an existing session with new instructions."""
-        
-        # Retrieve session
-        session = await self._get_session(session_id)
-        if not session:
-            raise ValueError(f"Session {session_id} not found")
+        images = []
+        for url in reference_urls:
+            # Download image
+            image_data = await self.storage.download_image(url)
             
-        # Apply refinement
-        result = await self.gpt_client.refine_image(instruction, session)
-        
-        # Update stored session
-        await self._store_session(session)
-        await self._persist_session(session)
-        
-        return result
-        
-    async def _store_session(self, session: ImageGenerationSession):
-        """Store session in Redis for quick access."""
-        key = f"image_session:{session.session_id}"
-        value = session_to_json(session)
-        await self.redis.set(key, value, ex=3600 * 24)  # 24 hour TTL
-        
-    async def _get_session(self, session_id: str) -> Optional[ImageGenerationSession]:
-        """Retrieve session from storage."""
-        # Try Redis first
-        key = f"image_session:{session_id}"
-        value = await self.redis.get(key)
-        
-        if value:
-            return json_to_session(value)
+            # Validate and potentially resize
+            processed = await self._process_reference_image(image_data)
+            images.append(processed)
             
-        # Fall back to database
-        db_session = await self.db.query(
-            "SELECT * FROM image_sessions WHERE session_id = ?",
-            [session_id]
-        )
+        return images
         
-        if db_session:
-            return ImageGenerationSession(**db_session)
+    async def _process_reference_image(self, image_data: bytes) -> bytes:
+        """Process reference image for optimal API usage."""
+        
+        img = Image.open(io.BytesIO(image_data))
+        
+        # Resize if too large (to reduce API costs)
+        max_size = 2048
+        if img.width > max_size or img.height > max_size:
+            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             
-        return None
-```
-
----
-
-## Conversation State Management
-
-### State Schema
-
-```python
-class ImageSessionState(BaseModel):
-    """Complete state of an image generation session."""
-    
-    # Session metadata
-    session_id: str
-    product_id: str
-    agent_id: str
-    user_id: Optional[str]
-    
-    # Conversation tracking
-    current_response_id: Optional[str]
-    conversation_turns: int = 0
-    
-    # Generated assets
-    images: List[GeneratedImage]
-    selected_image_id: Optional[str]  # Current "active" image
-    
-    # Context and configuration
-    product_context: Dict[str, Any]  # Product details for context
-    style_config: ImageStyleConfig
-    brand_guidelines: Optional[Dict[str, Any]]
-    
-    # Workflow state
-    workflow_stage: str  # "initial", "refining", "finalizing"
-    approval_status: str  # "pending", "approved", "rejected"
-    
-    # Timestamps
-    created_at: datetime
-    last_updated: datetime
-    expires_at: Optional[datetime]
-
-class GeneratedImage(BaseModel):
-    """Individual generated image metadata."""
-    
-    image_id: str
-    response_id: str  # Links to API response
-    turn_number: int  # Which conversation turn created this
-    
-    # Image data
-    url: Optional[str]
-    base64: Optional[str]
-    stored_path: str
-    
-    # Generation metadata
-    prompt_used: str
-    instruction_used: Optional[str]  # For refinements
-    generation_params: Dict[str, Any]
-    
-    # Quality and status
-    quality_score: Optional[float]  # From automated quality check
-    status: str  # "generated", "selected", "rejected", "final"
-    
-    # Usage tracking
-    used_in_campaigns: List[str]
-    performance_metrics: Optional[Dict[str, Any]]
-```
-
-### State Persistence Strategy
-
-```sql
--- PostgreSQL schema for session persistence
-CREATE TABLE image_generation_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id VARCHAR(255) UNIQUE NOT NULL,
-    product_id UUID REFERENCES products(id),
-    agent_id VARCHAR(100),
-    user_id UUID REFERENCES users(id),
-    
-    -- Conversation state
-    current_response_id VARCHAR(255),
-    conversation_history JSONB NOT NULL DEFAULT '[]',
-    conversation_turns INTEGER DEFAULT 0,
-    
-    -- Configuration
-    style_config JSONB,
-    brand_guidelines JSONB,
-    product_context JSONB,
-    
-    -- Workflow
-    workflow_stage VARCHAR(50) DEFAULT 'initial',
-    approval_status VARCHAR(50) DEFAULT 'pending',
-    
-    -- Timestamps
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP,
-    
-    -- Indexes
-    INDEX idx_sessions_product (product_id),
-    INDEX idx_sessions_created (created_at),
-    INDEX idx_sessions_status (approval_status)
-);
-
-CREATE TABLE generated_images (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id VARCHAR(255) REFERENCES image_generation_sessions(session_id),
-    image_id VARCHAR(255) UNIQUE NOT NULL,
-    response_id VARCHAR(255) NOT NULL,
-    turn_number INTEGER NOT NULL,
-    
-    -- Image data
-    storage_url TEXT NOT NULL,
-    thumbnail_url TEXT,
-    metadata JSONB,
-    
-    -- Generation details
-    prompt_used TEXT NOT NULL,
-    instruction_used TEXT,
-    generation_params JSONB,
-    
-    -- Status and quality
-    status VARCHAR(50) DEFAULT 'generated',
-    quality_score NUMERIC(3,2),
-    selected BOOLEAN DEFAULT FALSE,
-    
-    -- Usage tracking
-    usage_data JSONB DEFAULT '{}',
-    
-    -- Timestamps
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Indexes
-    INDEX idx_images_session (session_id),
-    INDEX idx_images_status (status),
-    INDEX idx_images_selected (selected)
-);
+        # Convert to RGB if necessary
+        if img.mode not in ('RGB', 'RGBA'):
+            img = img.convert('RGB')
+            
+        # Save to bytes
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG', optimize=True)
+        return buffer.getvalue()
 ```
 
 ---
@@ -403,1101 +197,614 @@ CREATE TABLE generated_images (
 
 ```python
 class ImageGenerationAgent(BaseProductAgent):
-    """Agent responsible for all image generation using GPT-Image-1."""
+    """Agent responsible for product image generation using reference images."""
     
     def __init__(self, product_id: str, config: ImageAgentConfig):
         super().__init__(product_id, "image_generation")
         self.config = config
-        self.conversation_manager = ImageConversationManager(
-            redis_client=get_redis_client(),
-            db_session=get_db_session()
-        )
-        self.quality_checker = ImageQualityChecker()
+        self.client = ImageGenerationClient(settings.OPENAI_API_KEY)
+        self.reference_handler = ReferenceImageHandler(get_storage_service())
+        self.prompt_optimizer = PromptOptimizer(config)
+        self.tracker = GenerationTracker()
         
-    async def generate_product_images(self, product_data: ProductData) -> ImageGenerationResult:
-        """Generate complete set of product images through conversation."""
+    async def generate_product_images(self, 
+                                    reference_images: List[str],
+                                    product_data: ProductData) -> GenerationSession:
+        """Generate product images based on references."""
         
-        results = ImageGenerationResult()
-        
-        # 1. Generate main product image
-        main_session = await self._generate_main_image(product_data)
-        results.main_image = main_session.selected_image
-        
-        # 2. Generate lifestyle images
-        for environment in self.config.lifestyle_settings["environments"]:
-            lifestyle_session = await self._generate_lifestyle_image(
-                product_data, environment
-            )
-            results.lifestyle_images.append(lifestyle_session.selected_image)
-            
-        # 3. Generate variations if needed
-        if self.config.generate_variations:
-            variations = await self._generate_variations(main_session)
-            results.variations.extend(variations)
-            
-        return results
-        
-    async def _generate_main_image(self, product_data: ProductData) -> ImageGenerationSession:
-        """Generate main product image with refinements."""
-        
-        # Build initial prompt with product context
-        initial_prompt = self._build_product_prompt(product_data)
-        
-        # Start session
-        session = await self.conversation_manager.start_session(
+        session = GenerationSession(
+            session_id=generate_session_id(),
             product_id=self.product_id,
-            initial_prompt=initial_prompt
+            reference_images=reference_images,
+            product_data=product_data
         )
         
-        # Check initial quality
-        quality = await self.quality_checker.check(session.generated_images[0])
+        # Prepare reference images
+        ref_image_data = await self.reference_handler.prepare_reference_images(
+            self.product_id, 
+            reference_images
+        )
         
-        # Refine if needed
-        if quality.score < self.config.quality_threshold:
-            refinements = self._determine_refinements(quality.issues)
-            
-            for refinement in refinements:
-                result = await self.conversation_manager.continue_session(
-                    session.session_id,
-                    refinement
+        # Generate main product image
+        main_result = await self._generate_main_image(
+            ref_image_data,
+            product_data,
+            session
+        )
+        session.add_result(main_result)
+        
+        # Generate lifestyle variations if configured
+        if self.config.generate_lifestyle:
+            for environment in self.config.lifestyle_environments:
+                lifestyle_result = await self._generate_lifestyle_image(
+                    ref_image_data,
+                    product_data,
+                    environment,
+                    session
                 )
+                session.add_result(lifestyle_result)
                 
-                # Check quality after each refinement
-                new_quality = await self.quality_checker.check(result["images"][0])
-                if new_quality.score >= self.config.quality_threshold:
-                    break
-                    
-        # Select best image from session
-        session.selected_image = await self._select_best_image(session)
-        
         return session
         
-    async def _generate_lifestyle_image(self, 
-                                      product_data: ProductData,
-                                      environment: str) -> ImageGenerationSession:
-        """Generate lifestyle image for specific environment."""
+    async def _generate_main_image(self,
+                                 reference_images: List[bytes],
+                                 product_data: ProductData,
+                                 session: GenerationSession) -> ImageGenerationResult:
+        """Generate main product image."""
         
-        # Build environment-specific prompt
-        prompt = self._build_lifestyle_prompt(product_data, environment)
-        
-        # Start session
-        session = await self.conversation_manager.start_session(
-            product_id=self.product_id,
-            initial_prompt=prompt
-        )
-        
-        # Apply style refinements based on brand
-        if self.config.brand_style_enforcement:
-            style_instruction = self._build_style_instruction()
-            await self.conversation_manager.continue_session(
-                session.session_id,
-                style_instruction
-            )
-            
-        session.selected_image = await self._select_best_image(session)
-        return session
-        
-    def _build_product_prompt(self, product_data: ProductData) -> str:
-        """Build detailed initial prompt for product image."""
-        
-        template = self.config.prompts.get("main_product", DEFAULT_PRODUCT_PROMPT)
-        
-        # Inject product details
-        prompt = template.format(
-            product_name=product_data.name,
-            product_description=product_data.description,
-            key_features=", ".join(product_data.features[:3]),
-            style=self.config.visual_style,
-            background=self.config.product_shots["main_image"]["background"],
-            lighting=self.config.product_shots["main_image"]["lighting"]
-        )
-        
-        # Add technical specifications if available
-        if product_data.specifications:
-            prompt += f"\n\nTechnical details to showcase: {product_data.specifications}"
-            
-        return prompt
-        
-    def _determine_refinements(self, quality_issues: List[str]) -> List[str]:
-        """Determine refinement instructions based on quality issues."""
-        
-        refinements = []
-        
-        issue_refinement_map = {
-            "low_detail": "Increase the detail and sharpness, especially on the product surface and edges",
-            "poor_lighting": "Improve the lighting to be more professional and evenly distributed",
-            "wrong_angle": "Adjust the angle to show the product from a more flattering perspective",
-            "background_issues": "Clean up the background to be pure white with no distractions",
-            "color_accuracy": "Adjust colors to be more accurate and vibrant",
-            "composition": "Improve the composition with better centering and appropriate zoom level"
-        }
-        
-        for issue in quality_issues:
-            if issue in issue_refinement_map:
-                refinements.append(issue_refinement_map[issue])
-                
-        return refinements
-```
-
-### 2. Quality Checking System
-
-```python
-class ImageQualityChecker:
-    """Automated quality checking for generated images."""
-    
-    def __init__(self):
-        self.checks = [
-            self._check_resolution,
-            self._check_composition,
-            self._check_lighting,
-            self._check_background,
-            self._check_product_visibility
-        ]
-        
-    async def check(self, image: GeneratedImage) -> QualityResult:
-        """Run quality checks on generated image."""
-        
-        issues = []
-        scores = []
-        
-        # Download image for analysis
-        image_data = await self._download_image(image.stored_url)
-        
-        # Run each check
-        for check_func in self.checks:
-            result = await check_func(image_data)
-            scores.append(result.score)
-            if result.issues:
-                issues.extend(result.issues)
-                
-        # Calculate overall score
-        overall_score = sum(scores) / len(scores)
-        
-        return QualityResult(
-            score=overall_score,
-            issues=issues,
-            passed=overall_score >= 0.8
-        )
-```
-
-### 3. Workflow Integration
-
-```python
-class ImageGenerationWorkflow:
-    """Orchestrates image generation within product lifecycle."""
-    
-    def __init__(self, product_id: str):
-        self.product_id = product_id
-        self.image_agent = ImageGenerationAgent(product_id, load_config(product_id))
-        
-    async def execute_discovery_phase(self) -> WorkflowResult:
-        """Generate initial images for product discovery."""
-        
-        # Load product data
-        product_data = await load_product_data(self.product_id)
-        
-        # Generate base images
-        results = await self.image_agent.generate_product_images(product_data)
-        
-        # Create checkpoint for approval
-        checkpoint = await create_checkpoint(
-            type="image_approval",
-            data={
-                "images": results.to_dict(),
-                "product_id": self.product_id
+        # Build optimized prompt
+        prompt = self.prompt_optimizer.build_product_prompt(
+            product_data,
+            style="main_product",
+            additional_context={
+                "background": self.config.main_image_background,
+                "lighting": self.config.main_image_lighting,
+                "composition": self.config.main_image_composition
             }
         )
         
-        return WorkflowResult(
-            status="pending_approval",
-            checkpoint_id=checkpoint.id,
-            results=results
+        # Generate image
+        result = await self.client.generate_from_reference(
+            reference_images=reference_images,
+            prompt=prompt,
+            quality_params={
+                "size": self.config.main_image_size,
+                "quality": "high",
+                "format": self.config.output_format
+            }
         )
         
-    async def execute_refinement_phase(self, 
-                                     checkpoint_feedback: CheckpointFeedback) -> WorkflowResult:
-        """Refine images based on feedback."""
+        # Track attempt
+        await self.tracker.track_attempt(session.session_id, result)
         
-        refinement_sessions = []
+        return result
         
-        for image_feedback in checkpoint_feedback.image_feedback:
-            if image_feedback.needs_refinement:
-                # Retrieve original session
-                session = await self.image_agent.conversation_manager.get_session(
-                    image_feedback.session_id
-                )
-                
-                # Apply refinements
-                for instruction in image_feedback.refinement_instructions:
-                    result = await self.image_agent.conversation_manager.continue_session(
-                        session.session_id,
-                        instruction
-                    )
-                    
-                refinement_sessions.append(session)
-                
-        return WorkflowResult(
-            status="refined",
-            sessions=refinement_sessions
+    async def regenerate_with_feedback(self,
+                                     session_id: str,
+                                     evaluation_feedback: EvaluationFeedback) -> ImageGenerationResult:
+        """Regenerate image based on evaluation feedback."""
+        
+        # Retrieve session
+        session = await self.tracker.get_session(session_id)
+        
+        # Get reference images
+        ref_images = await self.reference_handler.prepare_reference_images(
+            session.product_id,
+            session.reference_images
         )
+        
+        # Optimize prompt based on feedback
+        improved_prompt = self.prompt_optimizer.improve_prompt(
+            original_prompt=session.last_prompt,
+            feedback=evaluation_feedback,
+            product_data=session.product_data
+        )
+        
+        # Generate with improved prompt
+        result = await self.client.generate_from_reference(
+            reference_images=ref_images,
+            prompt=improved_prompt,
+            quality_params=session.quality_params
+        )
+        
+        # Track attempt
+        await self.tracker.track_attempt(session_id, result)
+        
+        return result
+```
+
+### 2. Generation Tracking
+
+```python
+class GenerationTracker:
+    """Tracks image generation attempts and sessions."""
+    
+    def __init__(self, db_session):
+        self.db = db_session
+        
+    async def create_session(self, session: GenerationSession) -> str:
+        """Create new generation session."""
+        
+        await self.db.execute("""
+            INSERT INTO image_generation_sessions
+            (session_id, product_id, reference_images, status, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+        """, session.session_id, session.product_id, 
+            json.dumps(session.reference_images), "active", datetime.utcnow())
+        
+        return session.session_id
+        
+    async def track_attempt(self, session_id: str, result: ImageGenerationResult):
+        """Track generation attempt."""
+        
+        await self.db.execute("""
+            INSERT INTO generation_attempts
+            (attempt_id, session_id, prompt_used, quality_settings, 
+             created_at, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """, result.attempt_id, session_id, result.prompt_used,
+            json.dumps(result.quality_settings), result.created_at,
+            json.dumps(result.metadata))
+            
+    async def get_session_history(self, session_id: str) -> List[Dict]:
+        """Get all attempts for a session."""
+        
+        return await self.db.fetch_all("""
+            SELECT * FROM generation_attempts
+            WHERE session_id = $1
+            ORDER BY created_at ASC
+        """, session_id)
 ```
 
 ---
 
-## Workflow Examples
+## Prompt Optimization
 
-### Example 1: Complete Product Image Generation Flow
+### 1. Prompt Optimizer
 
 ```python
-# 1. Initial generation
-session = await conversation_manager.start_session(
-    product_id="prod_123",
-    initial_prompt="""
-    Professional product photography of an eco-friendly stainless steel water bottle.
-    Features: 32oz capacity, vacuum insulated, powder-coated matte black finish, 
-    bamboo cap with silicone seal. 
-    Style: Minimalist, premium, sustainable aesthetic.
-    Background: Pure white, studio lighting, slight reflection on surface.
-    """
-)
-
-# 2. First refinement - improve angle
-result1 = await conversation_manager.continue_session(
-    session.session_id,
-    "Rotate the bottle 15 degrees to the right to better show the bamboo cap detail"
-)
-
-# 3. Second refinement - adjust lighting
-result2 = await conversation_manager.continue_session(
-    session.session_id,
-    "Add subtle rim lighting to emphasize the bottle's silhouette and matte texture"
-)
-
-# 4. Final refinement - add context
-result3 = await conversation_manager.continue_session(
-    session.session_id,
-    "Add a few water droplets on the surface to suggest coldness and freshness"
-)
-
-# 5. Generate variations
-variation1 = await conversation_manager.continue_session(
-    session.session_id,
-    "Create a version with the cap removed and placed beside the bottle"
-)
-
-variation2 = await conversation_manager.continue_session(
-    session.session_id,
-    "Show the bottle at a different angle highlighting the logo"
-)
+class PromptOptimizer:
+    """Optimizes prompts based on product data and feedback."""
+    
+    def __init__(self, config: ImageAgentConfig):
+        self.config = config
+        self.templates = self._load_prompt_templates()
+        
+    def build_product_prompt(self,
+                           product_data: ProductData,
+                           style: str = "main_product",
+                           additional_context: Dict = None) -> str:
+        """Build optimized prompt for product image generation."""
+        
+        template = self.templates.get(style, self.templates["default"])
+        
+        # Core product details
+        prompt_parts = [
+            template["base"].format(
+                product_name=product_data.name,
+                product_type=product_data.category
+            )
+        ]
+        
+        # Add key features
+        if product_data.features:
+            features_text = f"Key features: {', '.join(product_data.features[:5])}"
+            prompt_parts.append(features_text)
+            
+        # Add style requirements
+        if style == "main_product":
+            prompt_parts.extend([
+                f"Style: {self.config.visual_style}",
+                f"Background: {additional_context.get('background', 'pure white')}",
+                f"Lighting: {additional_context.get('lighting', 'professional studio')}",
+                f"Composition: {additional_context.get('composition', 'centered, full product visible')}"
+            ])
+            
+        # Add brand guidelines
+        if self.config.brand_guidelines:
+            prompt_parts.append(f"Brand style: {self.config.brand_guidelines.tone}")
+            
+        # Add technical requirements
+        prompt_parts.extend([
+            "High quality, professional product photography",
+            "Sharp focus, clear details",
+            "Consistent with reference image style"
+        ])
+        
+        return "\n".join(prompt_parts)
+        
+    def improve_prompt(self,
+                      original_prompt: str,
+                      feedback: EvaluationFeedback,
+                      product_data: ProductData) -> str:
+        """Improve prompt based on evaluation feedback."""
+        
+        improvements = []
+        
+        # Analyze feedback issues
+        for issue in feedback.issues:
+            if issue.type == "color_mismatch":
+                improvements.append(f"Ensure {issue.element} matches the exact color from reference: {issue.target_value}")
+            elif issue.type == "detail_missing":
+                improvements.append(f"Include {issue.element} as shown in reference image")
+            elif issue.type == "composition_error":
+                improvements.append(f"Adjust composition: {issue.suggestion}")
+            elif issue.type == "lighting_issue":
+                improvements.append(f"Lighting should be {issue.target_value}")
+                
+        # Build improved prompt
+        improved_parts = [original_prompt]
+        
+        if improvements:
+            improved_parts.append("\nIMPORTANT CORRECTIONS:")
+            improved_parts.extend(improvements)
+            
+        # Add emphasis on accuracy
+        improved_parts.append("\nMatch the reference image style and details exactly.")
+        
+        return "\n".join(improved_parts)
 ```
 
-### Example 2: Lifestyle Image Generation
+### 2. Prompt Templates
 
 ```python
-# 1. Generate base lifestyle image
-lifestyle_session = await conversation_manager.start_session(
-    product_id="prod_123",
-    initial_prompt="""
-    Lifestyle photography of someone using the eco-friendly water bottle during a hike.
-    Setting: Mountain trail with scenic background
-    Person: 30-something professional, athletic wear, natural pose
-    Lighting: Golden hour, natural sunlight
-    Mood: Active, healthy, environmentally conscious
-    Focus: Product in use but integrated naturally into the scene
-    """
-)
-
-# 2. Adjust demographics
-await conversation_manager.continue_session(
-    lifestyle_session.session_id,
-    "Make the person more diverse and inclusive in appearance"
-)
-
-# 3. Enhance product visibility
-await conversation_manager.continue_session(
-    lifestyle_session.session_id,
-    "Ensure the water bottle is more prominently visible while maintaining natural integration"
-)
-
-# 4. Create seasonal variation
-await conversation_manager.continue_session(
-    lifestyle_session.session_id,
-    "Transform this into a winter scene with appropriate clothing and snowy mountain background"
-)
+DEFAULT_PROMPT_TEMPLATES = {
+    "main_product": {
+        "base": "Generate a professional product photo of {product_name} ({product_type})",
+        "modifiers": [
+            "studio lighting",
+            "clean background",
+            "high resolution",
+            "commercial quality"
+        ]
+    },
+    "lifestyle": {
+        "base": "Create a lifestyle photo showing {product_name} in {environment}",
+        "modifiers": [
+            "natural setting",
+            "authentic usage",
+            "appealing composition"
+        ]
+    },
+    "detail_shot": {
+        "base": "Close-up detail shot of {product_name} highlighting {feature}",
+        "modifiers": [
+            "macro photography style",
+            "sharp focus on details",
+            "blurred background"
+        ]
+    }
+}
 ```
 
 ---
 
-## Integration with Image Evaluator Agent
+## Workflow Integration
 
-### Automated Quality Control Loop
-
-The Image Generation Agent seamlessly integrates with the Image Evaluator Agent to create an automated quality control system that ensures generated images meet requirements without manual intervention.
-
-### 1. Integration Architecture
+### 1. Automated Generation with Evaluation
 
 ```python
-class ImageGenerationWithAutomatedEvaluation:
-    """Orchestrates image generation with automatic evaluation and refinement."""
+class ImageGenerationWorkflow:
+    """Orchestrates image generation with automatic evaluation."""
     
     def __init__(self, product_id: str):
         self.product_id = product_id
-        self.generation_agent = ImageGenerationAgent(product_id)
-        self.evaluator_agent = ImageEvaluatorAgent(product_id)
-        self.storage_manager = SupabaseStorageManager()
-        self.max_refinement_cycles = 5
+        self.gen_agent = ImageGenerationAgent(product_id, load_config(product_id))
+        self.eval_agent = ImageEvaluatorAgent(product_id)
+        self.storage = SupabaseStorageService()
+        self.max_attempts = 5
         
-    async def generate_and_approve(self,
-                                 reference_image_url: str,
-                                 initial_prompt: str,
-                                 requirements: ProductRequirements) -> ApprovedImageResult:
-        """Generate image with automatic evaluation until approved."""
+    async def generate_with_approval(self,
+                                   reference_images: List[str],
+                                   product_data: ProductData,
+                                   requirements: ProductRequirements) -> ApprovedImageResult:
+        """Generate images with automatic evaluation loop."""
         
+        # Store reference images
+        stored_refs = []
+        for ref in reference_images:
+            url = await self.storage.upload_reference_image(
+                product_id=self.product_id,
+                image_data=ref,
+                metadata={"type": "reference", "product_id": self.product_id}
+            )
+            stored_refs.append(url)
+            
         # Start generation session
-        session = await self.generation_agent.conversation_manager.start_session(
-            product_id=self.product_id,
-            initial_prompt=initial_prompt
+        session = await self.gen_agent.generate_product_images(
+            reference_images=stored_refs,
+            product_data=product_data
         )
         
+        # Evaluation loop
         approved = False
-        cycle = 0
+        attempts = 0
         
-        while not approved and cycle < self.max_refinement_cycles:
-            # Get latest generated image
-            latest_image = session.generated_images[-1]
+        while not approved and attempts < self.max_attempts:
+            latest_result = session.latest_result
             
-            # Evaluate against reference
-            evaluation = await self.evaluator_agent.evaluate(
-                reference_image=reference_image_url,
-                generated_image=latest_image.stored_url,
+            # Evaluate generated image
+            evaluation = await self.eval_agent.evaluate(
+                reference_image=stored_refs[0],  # Primary reference
+                generated_image_data=latest_result.image_data,
                 requirements=requirements
             )
             
-            # Check if approved
             if evaluation.approved:
                 approved = True
-                # Store only the final approved image
-                final_url = await self.storage_manager.upload_generated_image(
+                # Store final approved image
+                final_url = await self.storage.upload_generated_image(
                     product_id=self.product_id,
                     session_id=session.session_id,
-                    image_data=latest_image.base64,
-                    image_type="main_product"
+                    image_data=latest_result.image_data,
+                    image_type="main_product",
+                    metadata={
+                        "approved": True,
+                        "evaluation_score": evaluation.score.overall,
+                        "attempts": attempts + 1
+                    }
                 )
                 break
                 
-            # Generate refinement instructions
-            refinements = await self.evaluator_agent.generate_refinements(evaluation)
+            # Generate new attempt with feedback
+            new_result = await self.gen_agent.regenerate_with_feedback(
+                session_id=session.session_id,
+                evaluation_feedback=evaluation.feedback
+            )
+            session.add_result(new_result)
             
-            # Apply each refinement
-            for instruction in refinements[:3]:  # Limit instructions per cycle
-                result = await self.generation_agent.conversation_manager.continue_session(
-                    session_id=session.session_id,
-                    instruction=instruction.text
-                )
-                
-            cycle += 1
+            attempts += 1
             
-        # Handle final result
+        # Handle result
         if approved:
             return ApprovedImageResult(
                 success=True,
                 final_image_url=final_url,
-                generation_session_id=session.session_id,
-                evaluation_score=evaluation.score.overall,
-                refinement_cycles=cycle,
-                total_images_generated=len(session.generated_images)
+                session_id=session.session_id,
+                attempts=attempts,
+                final_score=evaluation.score.overall
             )
         else:
-            # Escalate to human review
+            # Create checkpoint for human review
             checkpoint = await self.create_human_checkpoint(session, evaluation)
             return ApprovedImageResult(
                 success=False,
                 checkpoint_id=checkpoint.id,
-                reason="max_refinement_cycles_exceeded",
-                best_attempt_url=session.generated_images[-1].stored_url
+                reason="max_attempts_exceeded",
+                best_attempt=session.best_result
             )
 ```
 
-### 2. Evaluation Feedback Integration
+### 2. Batch Processing
 
 ```python
-class EvaluationFeedbackHandler:
-    """Handles evaluation feedback and generates appropriate refinements."""
+class BatchImageGenerator:
+    """Handle batch image generation for multiple products."""
     
-    def __init__(self):
-        self.refinement_strategies = self._load_refinement_strategies()
+    async def process_batch(self, batch_requests: List[ImageGenerationRequest]) -> List[GenerationResult]:
+        """Process multiple image generation requests efficiently."""
         
-    async def process_evaluation_feedback(self,
-                                        evaluation: EvaluationResult,
-                                        session: ImageGenerationSession) -> List[str]:
-        """Convert evaluation results into actionable refinement instructions."""
+        results = []
         
-        instructions = []
+        # Group by similar requirements for potential optimization
+        grouped = self._group_similar_requests(batch_requests)
         
-        # Analyze low-scoring areas
-        for metric, score in evaluation.score.breakdown.items():
-            if score < 0.7:  # Below threshold
-                strategy = self.refinement_strategies.get(metric)
-                if strategy:
-                    instruction = await strategy.generate_instruction(
-                        evaluation_data=evaluation,
-                        current_image=session.generated_images[-1]
-                    )
-                    instructions.append(instruction)
-                    
-        # Add specific issue-based refinements
-        for issue in evaluation.comparison.differences:
-            if issue.severity in ["high", "medium"]:
-                instruction = self._create_issue_instruction(issue)
-                instructions.append(instruction)
-                
-        # Prioritize and consolidate instructions
-        return self._prioritize_instructions(instructions, max_count=3)
-        
-    def _create_issue_instruction(self, issue: ImageIssue) -> str:
-        """Create specific instruction for an identified issue."""
-        
-        templates = {
-            "color_mismatch": "Adjust the {element} color to match the reference: {target_color}",
-            "composition_error": "Reframe the image to {correction}",
-            "detail_missing": "Add the missing {detail} to the {location}",
-            "lighting_issue": "Modify the lighting to be {lighting_correction}",
-            "texture_incorrect": "Change the {element} texture to appear more {target_texture}"
-        }
-        
-        template = templates.get(issue.type, "Fix the {element}: {correction}")
-        return template.format(**issue.details)
+        for group in grouped:
+            # Process group concurrently
+            group_results = await asyncio.gather(*[
+                self._process_single_request(req) for req in group
+            ])
+            results.extend(group_results)
+            
+        return results
 ```
 
-### 3. Storage Integration for Final Images Only
+---
+
+## Storage Strategy
+
+### 1. Optimized Storage
 
 ```python
-class OptimizedImageStorage:
-    """Handles storage of only final approved images."""
+class ImageStorageOptimizer:
+    """Optimizes storage to minimize costs."""
     
-    def __init__(self, storage_backend: SupabaseStorageManager):
+    def __init__(self, storage_backend: SupabaseStorageService):
         self.storage = storage_backend
-        self.temp_storage = TempImageCache()
         
-    async def handle_generation_cycle(self,
-                                    session: ImageGenerationSession,
-                                    evaluation: EvaluationResult) -> StorageResult:
-        """Handle storage for generation cycle."""
+    async def store_generation_result(self,
+                                    session: GenerationSession,
+                                    result: ImageGenerationResult,
+                                    approved: bool) -> Optional[str]:
+        """Store image only if approved or for temporary evaluation."""
         
-        latest_image = session.generated_images[-1]
-        
-        if evaluation.approved:
-            # Store permanently only if approved
-            permanent_url = await self.storage.upload_generated_image(
+        if approved:
+            # Store permanently
+            return await self.storage.upload_generated_image(
                 product_id=session.product_id,
                 session_id=session.session_id,
-                image_data=latest_image.base64,
-                image_type=self._determine_image_type(session)
-            )
-            
-            # Clean up all temporary images from this session
-            await self.temp_storage.cleanup_session(session.session_id)
-            
-            return StorageResult(
-                stored=True,
-                permanent_url=permanent_url,
-                storage_cost_saved=self._calculate_savings(session)
+                image_data=result.image_data,
+                image_type="final",
+                metadata={
+                    "approved": True,
+                    "prompt": result.prompt_used,
+                    "attempt_number": session.attempt_count
+                }
             )
         else:
-            # Keep in temporary cache for evaluation
-            temp_url = await self.temp_storage.store_temporary(
-                image_data=latest_image.base64,
-                session_id=session.session_id,
-                ttl_hours=24  # Auto-delete after 24 hours
+            # Store temporarily for evaluation (auto-cleanup after 24h)
+            return await self.storage.upload_temp_image(
+                image_data=result.image_data,
+                ttl_hours=24,
+                metadata={
+                    "session_id": session.session_id,
+                    "attempt_id": result.attempt_id
+                }
             )
-            
-            return StorageResult(
-                stored=False,
-                temp_url=temp_url
-            )
-```
-
-### 4. Workflow Example with Evaluator
-
-```python
-# Complete automated workflow
-async def automated_product_image_workflow(product_id: str):
-    """End-to-end automated image generation with evaluation."""
-    
-    # Initialize integrated system
-    integrated_system = ImageGenerationWithAutomatedEvaluation(product_id)
-    
-    # Load product data and reference
-    product_data = await load_product_data(product_id)
-    reference_image = await load_reference_image(product_id)
-    
-    # Define requirements
-    requirements = ProductRequirements(
-        product_name=product_data.name,
-        key_features=product_data.features,
-        brand_guidelines=product_data.brand_guidelines,
-        quality_threshold=0.85
-    )
-    
-    # Generate with automatic approval
-    result = await integrated_system.generate_and_approve(
-        reference_image_url=reference_image.url,
-        initial_prompt=f"""Professional product photography of {product_data.name}.
-        Features: {', '.join(product_data.features[:3])}.
-        Style: {product_data.brand_guidelines.style}.
-        Background: pure white, professional studio lighting.""",
-        requirements=requirements
-    )
-    
-    if result.success:
-        print(f"Image approved after {result.refinement_cycles} cycles")
-        print(f"Final image URL: {result.final_image_url}")
-        print(f"Storage savings: Generated {result.total_images_generated} images, stored only 1")
-    else:
-        print(f"Escalated to human review: {result.reason}")
-        print(f"Checkpoint ID: {result.checkpoint_id}")
-```
-
-### 5. Metrics and Monitoring
-
-```python
-class IntegratedSystemMetrics:
-    """Track metrics for the integrated generation-evaluation system."""
-    
-    def __init__(self):
-        self.metrics = {
-            "auto_approval_rate": Gauge(),
-            "avg_cycles_to_approval": Histogram(),
-            "storage_savings_gb": Counter(),
-            "human_escalation_rate": Gauge(),
-            "total_generation_time": Histogram()
-        }
-        
-    async def record_workflow_complete(self, workflow_result: WorkflowResult):
-        """Record metrics for completed workflow."""
-        
-        # Calculate auto-approval rate
-        if workflow_result.auto_approved:
-            self.metrics["auto_approval_rate"].inc()
-            
-        # Track cycles to approval
-        self.metrics["avg_cycles_to_approval"].observe(workflow_result.cycles)
-        
-        # Calculate storage savings
-        images_not_stored = workflow_result.total_generated - 1  # Only stored final
-        storage_saved_mb = images_not_stored * 2  # Assume 2MB average
-        self.metrics["storage_savings_gb"].inc(storage_saved_mb / 1024)
-        
-        # Track timing
-        self.metrics["total_generation_time"].observe(
-            workflow_result.duration_seconds
-        )
 ```
 
 ---
 
-## Configuration and Customization
+## Configuration
 
-### 1. Agent Configuration Schema
+### 1. Agent Configuration
 
 ```python
-class GPTImageAgentConfig(BaseModel):
-    """Configuration for GPT-Image-1 based image generation."""
+class ImageAgentConfig(BaseModel):
+    """Configuration for image generation agent."""
     
-    # Model settings
-    model_name: str = "gpt-4.1-mini"
-    temperature: float = 0.7
+    # API settings
+    model: str = "gpt-image-1"
+    max_attempts: int = 5
+    
+    # Image quality settings
+    main_image_size: str = "1024x1024"
+    output_format: str = "png"
+    quality: str = "high"
+    enable_transparency: bool = True
     
     # Generation settings
-    quality_threshold: float = 0.85
-    max_refinement_turns: int = 5
-    auto_refine: bool = True
-    
-    # Session management
-    session_timeout_hours: int = 24
-    max_images_per_session: int = 20
-    preserve_session_history: bool = True
+    generate_lifestyle: bool = True
+    lifestyle_environments: List[str] = ["home", "office", "outdoor"]
+    generate_variations: int = 0  # Number of variations per image
     
     # Style configuration
-    visual_style: ImageStyle
-    brand_guidelines: BrandGuidelines
+    visual_style: str = "professional product photography"
+    main_image_background: str = "pure white"
+    main_image_lighting: str = "studio lighting with soft shadows"
+    main_image_composition: str = "centered, full product visible"
     
-    # Prompt templates (customizable via frontend)
-    prompt_templates: Dict[str, PromptTemplate] = {
-        "main_product": PromptTemplate(
-            template="""Professional product photography of {product_name}.
-            Description: {product_description}
-            Key features to highlight: {key_features}
-            Visual style: {style}
-            Background: {background}
-            Lighting: {lighting}
-            Additional requirements: {additional_requirements}""",
-            variables=["product_name", "product_description", "key_features", 
-                      "style", "background", "lighting", "additional_requirements"],
-            editable=True
-        ),
-        "lifestyle": PromptTemplate(
-            template="""Lifestyle photography showing {product_name} in use.
-            Environment: {environment}
-            Target demographic: {demographic}
-            Mood: {mood}
-            Activity: {activity}
-            Time of day: {time_of_day}
-            Product integration: {integration_style}""",
-            variables=["product_name", "environment", "demographic", 
-                      "mood", "activity", "time_of_day", "integration_style"],
-            editable=True
-        ),
-        "refinement_instruction": PromptTemplate(
-            template="{instruction}",
-            variables=["instruction"],
-            editable=True
-        )
-    }
+    # Brand guidelines
+    brand_guidelines: Optional[BrandGuidelines] = None
     
-    # Refinement strategies
-    refinement_strategies: List[RefinementStrategy] = [
-        RefinementStrategy(
-            trigger="low_quality_score",
-            instructions=[
-                "Increase overall image quality and sharpness",
-                "Improve lighting and color accuracy",
-                "Enhance detail in key product areas"
-            ]
-        ),
-        RefinementStrategy(
-            trigger="brand_mismatch",
-            instructions=[
-                "Adjust visual style to match brand guidelines: {brand_style}",
-                "Ensure color palette aligns with brand colors: {brand_colors}",
-                "Apply brand-specific aesthetic requirements"
-            ]
-        )
-    ]
+    # Optimization
+    compress_output: bool = True
+    compression_level: int = 85  # For JPEG/WebP
     
-    # Output settings
-    output_format: str = "url"  # or "b64_json"
-    storage_backend: str = "s3"  # or "local", "gcs"
-    organize_by_session: bool = True
-    
-    # Quality checks
-    enable_auto_quality_check: bool = True
-    quality_check_criteria: List[str] = [
-        "resolution", "composition", "lighting", 
-        "background", "product_visibility", "brand_alignment"
-    ]
-
-class ImageStyle(BaseModel):
-    """Visual style configuration."""
-    
-    name: str = "modern_minimalist"
-    characteristics: List[str] = [
-        "clean lines", "ample white space", 
-        "professional lighting", "subtle shadows"
-    ]
-    color_temperature: str = "neutral"  # warm, neutral, cool
-    contrast_level: str = "medium"  # low, medium, high
-    saturation: str = "natural"  # muted, natural, vibrant
-
-class BrandGuidelines(BaseModel):
-    """Brand-specific guidelines for image generation."""
-    
-    primary_colors: List[str]  # Hex codes
-    secondary_colors: List[str]
-    avoid_colors: List[str]
-    
-    tone: str  # "premium", "approachable", "technical", etc.
-    mandatory_elements: List[str]  # e.g., ["logo visible", "tagline included"]
-    prohibited_elements: List[str]  # e.g., ["competitors", "off-brand imagery"]
-    
-    composition_rules: List[str] = [
-        "Product should occupy 60-70% of frame",
-        "Maintain consistent angle across product line",
-        "Include subtle brand watermark in corner"
-    ]
-```
-
-### 2. Frontend Integration API
-
-```python
-@router.post("/products/{product_id}/images/generate")
-async def start_image_generation(
-    product_id: str,
-    request: ImageGenerationRequest,
-    user: User = Depends(get_current_user)
-):
-    """Start a new image generation session."""
-    
-    agent = get_image_agent(product_id)
-    session = await agent.conversation_manager.start_session(
-        product_id=product_id,
-        initial_prompt=request.prompt
-    )
-    
-    return {
-        "session_id": session.session_id,
-        "images": session.generated_images,
-        "status": "success"
-    }
-
-@router.post("/products/{product_id}/images/sessions/{session_id}/refine")
-async def refine_image(
-    product_id: str,
-    session_id: str,
-    request: RefinementRequest,
-    user: User = Depends(get_current_user)
-):
-    """Apply refinement to existing session."""
-    
-    agent = get_image_agent(product_id)
-    result = await agent.conversation_manager.continue_session(
-        session_id=session_id,
-        instruction=request.instruction
-    )
-    
-    return {
-        "session_id": session_id,
-        "new_images": result["images"],
-        "turn_number": len(result["conversation_history"]) // 2
-    }
-
-@router.get("/products/{product_id}/images/sessions/{session_id}")
-async def get_session_details(
-    product_id: str,
-    session_id: str,
-    user: User = Depends(get_current_user)
-):
-    """Get full session history and images."""
-    
-    agent = get_image_agent(product_id)
-    session = await agent.conversation_manager.get_session(session_id)
-    
-    return {
-        "session": session.dict(),
-        "conversation_history": session.conversation_history,
-        "all_images": session.generated_images,
-        "selected_image": session.selected_image
-    }
-
-@router.put("/products/{product_id}/images/config/prompts")
-async def update_prompt_templates(
-    product_id: str,
-    updates: PromptTemplateUpdate,
-    user: User = Depends(get_current_user)
-):
-    """Update customizable prompt templates."""
-    
-    config_manager = ImageConfigManager()
-    await config_manager.update_prompt_templates(
-        product_id=product_id,
-        template_name=updates.template_name,
-        new_template=updates.template,
-        user_id=user.id
-    )
-    
-    return {"status": "updated"}
+    # Prompt templates (customizable)
+    prompt_templates: Dict[str, Dict] = DEFAULT_PROMPT_TEMPLATES
 ```
 
 ---
 
-## Best Practices
-
-### 1. Prompt Engineering
-
-```python
-class PromptEngineeringGuide:
-    """Best practices for GPT-Image-1 prompts."""
-    
-    @staticmethod
-    def product_prompt_structure():
-        return """
-        1. Start with image type: "Professional product photography of..."
-        2. Provide detailed product description
-        3. List specific features to highlight
-        4. Define visual style and mood
-        5. Specify technical requirements (lighting, angle, background)
-        6. Add brand-specific requirements
-        7. Include any text or labels needed
-        
-        Example:
-        'Professional product photography of [product].
-         Features: [specific details about size, color, material, unique features].
-         Style: [minimalist/luxury/technical/lifestyle].
-         Lighting: [studio/natural/dramatic] with [specific lighting notes].
-         Background: [pure white/gradient/environmental].
-         Composition: [angle, framing, focus points].
-         Additional: [any logos, text, or special requirements].'
-        """
-    
-    @staticmethod
-    def refinement_instruction_patterns():
-        return {
-            "adjust_element": "Adjust the {element} to be more {quality}",
-            "add_detail": "Add {specific detail} to {location}",
-            "change_style": "Transform the style to be more {new_style} while maintaining {preserve}",
-            "fix_issue": "Correct the {issue} by {solution}",
-            "enhance_quality": "Enhance the {aspect} to achieve {goal}",
-            "iterate_variation": "Create a variation where {change} but keep {constant}"
-        }
-```
-
-### 2. Session Management Best Practices
-
-1. **Session Lifecycle**:
-   - Always set expiration times on sessions
-   - Clean up abandoned sessions regularly
-   - Implement session recovery for interrupted workflows
-
-2. **Performance Optimization**:
-   - Cache frequently used prompts and configurations
-   - Batch similar requests when possible
-   - Use Redis for active session storage, PostgreSQL for archives
-
-3. **Quality Control**:
-   - Implement automated quality checks before human review
-   - Track quality scores across sessions for optimization
-   - Build feedback loops to improve prompt templates
-
-### 3. Error Handling Strategies
-
-```python
-class ImageGenerationErrorHandler:
-    """Comprehensive error handling for image generation."""
-    
-    @staticmethod
-    async def handle_api_error(error: Exception, session: ImageGenerationSession):
-        """Handle API-level errors."""
-        
-        if isinstance(error, RateLimitError):
-            # Implement exponential backoff
-            await implement_backoff_retry(session)
-            
-        elif isinstance(error, InvalidRequestError):
-            # Log and notify for prompt adjustment
-            await log_prompt_error(session, error)
-            await notify_prompt_issue(session)
-            
-        elif isinstance(error, APIConnectionError):
-            # Queue for retry
-            await queue_for_retry(session)
-            
-    @staticmethod
-    async def handle_quality_failure(session: ImageGenerationSession, max_attempts: int = 5):
-        """Handle cases where quality threshold cannot be met."""
-        
-        if session.conversation_turns >= max_attempts:
-            # Escalate to human review
-            await create_quality_checkpoint(session)
-            
-        else:
-            # Try alternative approach
-            await apply_alternative_strategy(session)
-```
-
----
-
-## Error Handling and Recovery
+## Error Handling
 
 ### 1. Retry Logic
 
 ```python
-class RetryableImageGeneration:
-    """Implements retry logic for image generation."""
+class ImageGenerationRetry:
+    """Handles retries for failed generation attempts."""
     
-    def __init__(self, max_retries: int = 3, backoff_factor: float = 2.0):
+    def __init__(self, max_retries: int = 3):
         self.max_retries = max_retries
-        self.backoff_factor = backoff_factor
         
-    async def generate_with_retry(self, func, *args, **kwargs):
-        """Execute image generation with retry logic."""
+    async def generate_with_retry(self, 
+                                generation_func,
+                                *args, 
+                                **kwargs) -> ImageGenerationResult:
+        """Execute generation with retry logic."""
         
         last_error = None
         
         for attempt in range(self.max_retries):
             try:
-                return await func(*args, **kwargs)
+                return await generation_func(*args, **kwargs)
                 
             except RateLimitError as e:
-                wait_time = self.backoff_factor ** attempt
+                # Exponential backoff for rate limits
+                wait_time = 2 ** attempt
                 await asyncio.sleep(wait_time)
                 last_error = e
                 
+            except InvalidRequestError as e:
+                # Don't retry invalid requests
+                raise
+                
             except Exception as e:
-                # Log error and determine if retryable
-                if self._is_retryable(e):
-                    last_error = e
-                    continue
-                else:
-                    raise
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(1)
                     
-        raise MaxRetriesExceeded(f"Failed after {self.max_retries} attempts: {last_error}")
-```
-
-### 2. Session Recovery
-
-```python
-class SessionRecovery:
-    """Handles recovery of interrupted sessions."""
-    
-    async def recover_session(self, session_id: str) -> Optional[ImageGenerationSession]:
-        """Attempt to recover an interrupted session."""
-        
-        # Load session from persistent storage
-        session = await load_session_from_db(session_id)
-        
-        if not session:
-            return None
-            
-        # Validate session state
-        if await self._is_session_recoverable(session):
-            # Restore to Redis
-            await store_session_in_redis(session)
-            
-            # Verify API state
-            if session.current_response_id:
-                # Verify we can continue from this response
-                if await self._verify_response_continuity(session.current_response_id):
-                    return session
-                    
-        # If not recoverable, create checkpoint for manual review
-        await create_recovery_checkpoint(session)
-        return None
+        raise GenerationFailedError(f"Failed after {self.max_retries} attempts: {last_error}")
 ```
 
 ---
 
 ## Performance Considerations
 
-### 1. Caching Strategy
+### 1. Cost Optimization
 
 ```python
-class ImageGenerationCache:
-    """Caching layer for image generation."""
+class CostOptimizer:
+    """Optimizes API usage for cost efficiency."""
     
-    def __init__(self):
-        self.prompt_cache = LRUCache(maxsize=1000)
-        self.session_cache = TTLCache(maxsize=100, ttl=3600)
+    def calculate_optimal_settings(self, requirements: Dict) -> Dict:
+        """Calculate optimal quality settings based on requirements."""
         
-    async def get_or_generate(self, prompt_hash: str, generate_func):
-        """Check cache before generating new image."""
+        settings = {}
         
-        # Check if we have recent similar generation
-        cached = self.prompt_cache.get(prompt_hash)
-        
-        if cached and self._is_cache_valid(cached):
-            return cached
+        # Size optimization
+        if requirements.get("usage") == "thumbnail":
+            settings["size"] = "512x512"
+            settings["quality"] = "medium"
+        elif requirements.get("usage") == "web":
+            settings["size"] = "1024x1024"
+            settings["quality"] = "high"
+        else:  # Full quality
+            settings["size"] = "1536x1024"
+            settings["quality"] = "high"
             
-        # Generate new
-        result = await generate_func()
-        
-        # Cache result
-        self.prompt_cache[prompt_hash] = result
-        
-        return result
+        # Format optimization
+        if requirements.get("needs_transparency"):
+            settings["format"] = "png"
+        else:
+            settings["format"] = "jpeg"
+            settings["compression"] = 85
+            
+        return settings
 ```
 
-### 2. Batch Processing
+### 2. Monitoring
 
 ```python
-class BatchImageProcessor:
-    """Handle batch image generation efficiently."""
-    
-    async def process_batch(self, requests: List[ImageRequest]) -> List[ImageResult]:
-        """Process multiple image requests efficiently."""
-        
-        # Group similar requests
-        grouped = self._group_similar_requests(requests)
-        
-        results = []
-        
-        for group in grouped:
-            # Start sessions in parallel
-            sessions = await asyncio.gather(*[
-                self.start_session(req) for req in group
-            ])
-            
-            # Process refinements in optimized order
-            refined = await self._process_refinements_optimized(sessions)
-            
-            results.extend(refined)
-            
-        return results
-```
-
----
-
-## Monitoring and Analytics
-
-### 1. Metrics Collection
-
-```python
-class ImageGenerationMetrics:
-    """Track metrics for image generation."""
+class GenerationMetrics:
+    """Track generation performance metrics."""
     
     def __init__(self):
         self.metrics = {
-            "sessions_started": Counter(),
-            "images_generated": Counter(), 
-            "refinements_applied": Counter(),
-            "quality_scores": Histogram(),
-            "session_duration": Histogram(),
-            "api_errors": Counter(),
-            "cache_hits": Counter()
+            "generations_total": Counter(),
+            "generations_approved": Counter(),
+            "average_attempts": Histogram(),
+            "generation_time": Histogram(),
+            "api_cost_estimate": Counter()
         }
         
-    async def record_session_complete(self, session: ImageGenerationSession):
-        """Record metrics for completed session."""
+    async def record_generation(self, session: GenerationSession):
+        """Record metrics for generation session."""
         
-        self.metrics["sessions_started"].inc()
-        self.metrics["images_generated"].inc(len(session.generated_images))
-        self.metrics["refinements_applied"].inc(session.conversation_turns - 1)
-        self.metrics["session_duration"].observe(
-            (session.updated_at - session.created_at).total_seconds()
-        )
+        self.metrics["generations_total"].inc()
         
-        # Calculate average quality
-        if session.generated_images:
-            avg_quality = sum(img.quality_score for img in session.generated_images) / len(session.generated_images)
-            self.metrics["quality_scores"].observe(avg_quality)
-```
-
-### 2. Performance Dashboard
-
-```python
-class ImageGenerationDashboard:
-    """Dashboard data for image generation performance."""
-    
-    async def get_dashboard_data(self, product_id: str, timeframe: str = "7d"):
-        """Get dashboard metrics for image generation."""
+        if session.approved:
+            self.metrics["generations_approved"].inc()
+            
+        self.metrics["average_attempts"].observe(session.attempt_count)
+        self.metrics["generation_time"].observe(session.duration_seconds)
         
-        return {
-            "summary": {
-                "total_sessions": await self.count_sessions(product_id, timeframe),
-                "total_images": await self.count_images(product_id, timeframe),
-                "avg_quality_score": await self.avg_quality(product_id, timeframe),
-                "avg_refinements_per_session": await self.avg_refinements(product_id, timeframe)
-            },
-            "quality_distribution": await self.quality_distribution(product_id, timeframe),
-            "popular_refinements": await self.top_refinements(product_id, timeframe),
-            "session_outcomes": await self.session_outcomes(product_id, timeframe),
-            "cost_analysis": {
-                "total_api_cost": await self.calculate_api_cost(product_id, timeframe),
-                "cost_per_final_image": await self.cost_per_image(product_id, timeframe)
-            }
-        }
+        # Estimate cost (rough approximation)
+        cost = session.attempt_count * 0.04  # ~$0.04 per image
+        self.metrics["api_cost_estimate"].inc(cost)
 ```
 
 ---
 
 ## Conclusion
 
-This implementation leverages GPT-Image-1's Responses API to create a sophisticated image generation system that supports iterative refinement through natural language conversations. The multi-turn capability enables precise control over image generation, leading to higher quality outputs and better alignment with brand requirements.
+This implementation leverages OpenAI's `images.edit` endpoint to create a streamlined image generation system that:
 
-Key advantages:
-1. **Iterative Refinement**: Natural language instructions for precise adjustments
-2. **Context Preservation**: Maintains conversation history for coherent modifications  
-3. **Quality Control**: Automated checks with human-in-the-loop approval
-4. **Flexibility**: Customizable prompts and workflows per product
-5. **Scalability**: Efficient session management and caching strategies
+1. **Uses reference images directly** - Better control over output quality
+2. **Simplifies architecture** - No complex conversation management
+3. **Optimizes costs** - Single API call per attempt
+4. **Integrates seamlessly** - Works with evaluator agent for quality control
+5. **Scales efficiently** - Batch processing and smart storage
 
-The system integrates seamlessly with the broader product lifecycle management platform while maintaining the flexibility to evolve with new capabilities as they become available.
+The system focuses on generating high-quality product images that match reference photos while allowing for style variations through prompt engineering.
