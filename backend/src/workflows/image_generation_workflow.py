@@ -1,11 +1,13 @@
 """Image Generation Workflow using CrewAI."""
 
 from typing import Dict, Any, Optional
+from uuid import UUID
 import asyncio
 import logging
 
 from crewai import Crew, Process
 
+from ..crews.image_generation_crew import ImageGenerationCrew
 from ..agents.image_generation import ImageGenerationAgent
 from ..agents.image_evaluator import ImageEvaluatorAgent
 from ..services.storage import SupabaseStorageService
@@ -20,10 +22,45 @@ class ImageGenerationWorkflow:
     def __init__(self, max_attempts: int = 3):
         """Initialize workflow with agents."""
         self.max_attempts = max_attempts
+        # These are still available for direct agent usage if needed
         self.generation_agent = ImageGenerationAgent()
         self.evaluator_agent = ImageEvaluatorAgent()
         self.storage = SupabaseStorageService()
         
+    async def generate_product_image_with_crew(
+        self,
+        product_id: str,
+        reference_image_url: str,
+        product_name: str,
+        product_features: list[str],
+        style_requirements: Optional[Dict[str, str]] = None,
+        approval_threshold: float = 0.85
+    ) -> Dict[str, Any]:
+        """
+        Generate product image using the new CrewAI-based implementation.
+        
+        This method uses the ImageGenerationCrew which handles the full
+        generation and evaluation workflow with automatic retries.
+        """
+        # Convert product_id to UUID if it's a string
+        if isinstance(product_id, str):
+            product_uuid = UUID(product_id)
+        else:
+            product_uuid = product_id
+            
+        # Create and execute the crew
+        crew = ImageGenerationCrew(
+            product_id=product_uuid,
+            reference_image_url=reference_image_url,
+            product_name=product_name,
+            product_features=product_features,
+            style_requirements=style_requirements,
+            approval_threshold=approval_threshold,
+            max_attempts=self.max_attempts
+        )
+        
+        return await crew.execute_async()
+    
     async def generate_product_image(
         self,
         product_id: str,

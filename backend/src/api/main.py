@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ..core.config import get_settings
-from .routes import agents, checkpoints, health, image_generation
+from .routes import agents, checkpoints, health, image_generation, tasks
 
 settings = get_settings()
 
@@ -44,6 +44,10 @@ def create_app() -> FastAPI:
         image_generation.router,
         prefix=settings.api_prefix,
         tags=["image-generation"]
+    )
+    app.include_router(
+        tasks.router,
+        tags=["tasks"]
     )
     
     return app

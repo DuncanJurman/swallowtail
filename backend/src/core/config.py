@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # OpenAI Configuration
     openai_api_key: str
-    openai_model: str = "gpt-4"
+    openai_model: str = "gpt-4.1"
     
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"

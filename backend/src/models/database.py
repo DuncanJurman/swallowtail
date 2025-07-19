@@ -104,6 +104,7 @@ class Product(Base):
     # Relationships
     discovered_by = relationship("Agent", back_populates="discovered_products")
     tasks = relationship("AgentTask", back_populates="product", cascade="all, delete-orphan")
+    product_tasks = relationship("ProductTask", back_populates="product", cascade="all, delete-orphan")
     decisions = relationship("AgentDecision", back_populates="product", cascade="all, delete-orphan")
 
 
@@ -313,3 +314,32 @@ class ResearchMetric(Base):
     average_score = Column(Numeric(3, 2))
     metrics_data = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ProductTask(Base):
+    """Product-specific tasks created by users and handled by agents."""
+    __tablename__ = "product_tasks"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    
+    # Task details
+    task_description = Column(Text, nullable=False)
+    status = Column(SQLEnum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
+    priority = Column(Integer, default=5, nullable=False)  # 1=highest, 9=lowest
+    
+    # Assignment and execution
+    assigned_agent = Column(String(100))  # Agent type handling the task
+    result_data = Column(JSONB)  # Results from task execution
+    error_message = Column(Text)  # Error details if failed
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    
+    # Tracking
+    created_by = Column(UUID(as_uuid=True))  # User who created the task
+    
+    # Relationships
+    product = relationship("Product", back_populates="product_tasks")

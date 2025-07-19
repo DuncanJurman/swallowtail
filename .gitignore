@@ -181,8 +181,18 @@ next-env.d.ts
 # yarn.lock
 # pnpm-lock.yaml
 
-# Temporary test files
-test_*.py
-*_test.py
+# Temporary files
 quick_test.py
-test_setup.py
+temp_*.py
+*.tmp
+
+# Backend specific
+backend/output/
+backend/output/**
+backend/crew_logs.json
+backend/htmlcov/
+backend/.coverage
+
+# Flow diagrams
+*.html.html
+flow_diagram.html

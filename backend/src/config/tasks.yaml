@@ -1,0 +1,174 @@
+# Swallowtail Task Templates
+# Predefined task configurations for common operations
+
+# Task interpretation - used by orchestrator to understand user requests
+interpret_user_task:
+  description: >
+    Analyze this user task for product {product_id} and create an execution plan:
+    
+    User Task: {task_description}
+    
+    Break this down into specific subtasks and identify which specialist agent should handle each.
+    Consider these available specialists:
+    - Market Research Specialist: For competitive analysis, market trends, pricing research
+    - Product Image Specialist: For generating or updating product images
+    - Product Content Writer: For creating descriptions, titles, marketing content
+    - Pricing Strategy Analyst: For pricing optimization and strategy
+    - SEO Optimization Specialist: For improving search visibility
+    
+    Provide a clear, actionable plan with specific subtasks, priorities, and agent assignments.
+  expected_output: >
+    A structured execution plan in JSON format with:
+    {
+      "subtasks": [
+        {
+          "id": "unique_id",
+          "type": "task_type",
+          "description": "specific task description",
+          "agent": "agent_name",
+          "priority": 1-5,
+          "dependencies": ["other_task_ids"],
+          "estimated_time": "time_estimate"
+        }
+      ],
+      "total_estimated_time": "total_time",
+      "complexity": "low|medium|high"
+    }
+  guardrail: Ensure the plan includes specific, actionable subtasks with clear agent assignments
+
+# Image generation task
+generate_product_image:
+  description: >
+    Generate a high-quality product image for {product_name}.
+    
+    Reference image: {reference_image_url}
+    Key features to highlight: {product_features}
+    Style requirements: {style_requirements}
+    
+    Use the gpt-image-1 model to create a professional product image that matches
+    the reference style exactly while highlighting the product features.
+  expected_output: >
+    A high-quality product image that:
+    1. Matches the reference image style
+    2. Clearly shows all product features
+    3. Has professional lighting and composition
+    4. Is suitable for e-commerce use
+    
+    Return the image data and generation details.
+
+# Image evaluation task
+evaluate_product_image:
+  description: >
+    Evaluate the generated product image against the reference and requirements.
+    
+    Reference image: {reference_image_url}
+    Generated image: {generated_image_data}
+    Original prompt: {original_prompt}
+    Approval threshold: {approval_threshold}
+    
+    Assess visual fidelity, prompt accuracy, technical quality, and product accuracy.
+  expected_output: >
+    A detailed evaluation with:
+    - Overall score (0-100)
+    - Visual fidelity score
+    - Prompt accuracy score
+    - Technical quality score
+    - Product accuracy score
+    - List of issues found
+    - Specific improvement suggestions
+
+# Market research task
+research_market_trends:
+  description: >
+    Research current market trends and competitive landscape for {product_category}.
+    
+    Focus areas:
+    - Current market size and growth
+    - Top competitors and their strategies
+    - Pricing trends
+    - Consumer preferences
+    - Emerging opportunities
+  expected_output: >
+    A comprehensive market research report with:
+    1. Executive summary
+    2. Market size and growth data
+    3. Competitive analysis
+    4. Pricing insights
+    5. Consumer trends
+    6. Recommendations
+  guardrail: Ensure all data points include sources and are from the last 2 years
+
+# Content creation task
+write_product_description:
+  description: >
+    Write a compelling product description for {product_name}.
+    
+    Product details: {product_details}
+    Target audience: {target_audience}
+    Key benefits: {key_benefits}
+    Brand voice: {brand_voice}
+    
+    Create SEO-optimized content that converts browsers into buyers.
+  expected_output: >
+    A complete product description including:
+    1. Compelling headline
+    2. Product overview (100-150 words)
+    3. Key features and benefits (bullet points)
+    4. Technical specifications
+    5. SEO-optimized meta description
+
+# Pricing analysis task
+analyze_pricing_strategy:
+  description: >
+    Analyze and recommend optimal pricing for {product_name}.
+    
+    Current cost: {cost_price}
+    Competitor prices: {competitor_prices}
+    Market position: {market_position}
+    Target margin: {target_margin}
+    
+    Provide data-driven pricing recommendations.
+  expected_output: >
+    A pricing strategy report with:
+    1. Recommended price point
+    2. Pricing rationale
+    3. Competitive positioning
+    4. Margin analysis
+    5. Volume projections
+    6. A/B testing recommendations
+
+# SEO optimization task
+optimize_for_search:
+  description: >
+    Optimize product listing for search visibility.
+    
+    Product: {product_name}
+    Current title: {current_title}
+    Current description: {current_description}
+    Target keywords: {target_keywords}
+    
+    Improve SEO while maintaining readability.
+  expected_output: >
+    SEO-optimized content including:
+    1. Optimized title (60 chars max)
+    2. Meta description (155 chars max)
+    3. Keyword-rich product description
+    4. Suggested tags and categories
+    5. Internal linking recommendations
+
+# Task status update
+update_task_progress:
+  description: >
+    Provide a status update for task {task_id}.
+    
+    Current status: {current_status}
+    Progress: {progress_percentage}
+    Completed items: {completed_items}
+    Remaining items: {remaining_items}
+  expected_output: >
+    A status update with:
+    - Current progress percentage
+    - Completed subtasks
+    - Remaining work
+    - Any blockers or issues
+    - Estimated completion time

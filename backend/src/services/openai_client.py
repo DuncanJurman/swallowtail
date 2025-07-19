@@ -42,9 +42,7 @@ class OpenAIImageClient:
         self,
         reference_images: List[bytes],
         prompt: str,
-        size: str = "1024x1024",
-        quality: str = "high",
-        background: str = "transparent"
+        size: str = "1024x1024"
     ) -> ImageGenerationResult:
         """
         Generate image based on reference images and prompt.
@@ -52,9 +50,7 @@ class OpenAIImageClient:
         Args:
             reference_images: List of reference images in bytes
             prompt: Text prompt describing desired output
-            size: Image size (1024x1024, 1536x1024, 1024x1536, or auto)
-            quality: Rendering quality (low, medium, high, or auto)
-            background: transparent or opaque
+            size: Image size (1024x1024, 1536x1024, 1024x1536)
             
         Returns:
             ImageGenerationResult with generated image data
@@ -72,8 +68,6 @@ class OpenAIImageClient:
                 image=image_files,
                 prompt=prompt,
                 size=size,
-                quality=quality,
-                background=background,
                 response_format="b64_json"
             )
             
@@ -91,14 +85,10 @@ class OpenAIImageClient:
                 metadata={
                     "model": self.model,
                     "size": size,
-                    "quality": quality,
-                    "background": background,
                     "reference_count": len(reference_images)
                 },
                 quality_settings={
-                    "size": size,
-                    "quality": quality,
-                    "background": background
+                    "size": size
                 }
             )
             
@@ -111,8 +101,7 @@ class OpenAIImageClient:
         self,
         reference_image: bytes,
         prompt: str,
-        size: str = "1024x1024",
-        quality: str = "high"
+        size: str = "1024x1024"
     ) -> ImageGenerationResult:
         """
         Convenience method for single reference image.
@@ -121,7 +110,6 @@ class OpenAIImageClient:
             reference_image: Reference image in bytes
             prompt: Text prompt describing desired output
             size: Image size
-            quality: Rendering quality
             
         Returns:
             ImageGenerationResult with generated image data
@@ -129,8 +117,7 @@ class OpenAIImageClient:
         return await self.generate_from_reference(
             reference_images=[reference_image],
             prompt=prompt,
-            size=size,
-            quality=quality
+            size=size
         )
             
     async def prepare_reference_image(self, image_data: bytes, max_size_mb: int = 4) -> bytes:

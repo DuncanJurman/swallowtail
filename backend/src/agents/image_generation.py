@@ -1,211 +1,120 @@
-"""Image Generation Agent with CrewAI integration."""
+"""Image Generation Agent using CrewAI properly."""
 
-from typing import Dict, Any, Optional
-
+from typing import Dict, Any, List, Optional
 from crewai import Task
 
 from ..agents.base import BaseAgent, AgentResult
-from ..services.openai_image_service import OpenAIImageService, GenerationResult
-from ..services.storage import SupabaseStorageService
+from ..tools.image_generation_tool import ImageGenerationTool
+from ..tools.image_storage_tool import ImageStorageTool, ImageRetrievalTool
 
 
 class ImageGenerationAgent(BaseAgent):
-    """CrewAI agent for generating product images."""
+    """CrewAI agent for coordinating product image generation."""
     
-    def __init__(self):
-        super().__init__(
-            name="image_generation",
-            role="Product Image Generator", 
-            goal="Generate high-quality product images from references using gpt-image-1",
-            backstory="""You are an expert product photographer AI specialized in creating 
-            high-quality product images that match reference styles exactly. You use advanced 
-            image generation to ensure products look professional and appealing.""",
-            tools=[]
-        )
-        self.openai_service = OpenAIImageService()
-        self.storage = SupabaseStorageService()
-    
-    async def execute(self, context: Dict[str, Any]) -> AgentResult:
-        """Execute image generation task using CrewAI."""
-        try:
-            # Extract parameters from context
-            reference_image_url = context.get('reference_image_url')
-            product_name = context.get('product_name', 'Product')
-            product_features = context.get('product_features', [])
-            style_requirements = context.get('style_requirements', {})
-            regenerate = context.get('regenerate', False)
+    def __init__(self, **kwargs):
+        """Initialize with configuration from YAML or kwargs."""
+        # If no role is provided, load from YAML config
+        if not kwargs.get('role'):
+            # Load agent configuration from YAML
+            from pathlib import Path
+            import yaml
             
-            if not reference_image_url:
-                return AgentResult(
-                    success=False,
-                    error="Reference image URL is required"
-                )
-            
-            if regenerate:
-                # Handle regeneration with feedback
-                original_prompt = context.get('original_prompt', '')
-                feedback = context.get('feedback', [])
-                result = await self._regenerate_with_feedback(
-                    reference_image_url,
-                    original_prompt, 
-                    feedback,
-                    style_requirements
-                )
+            config_path = Path(__file__).parent.parent / "config" / "agents.yaml"
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    agents_config = yaml.safe_load(f)
+                    if 'image_generator' in agents_config:
+                        agent_config = agents_config['image_generator']
+                        kwargs.update({
+                            'name': 'image_generator',
+                            'role': agent_config.get('role', 'Product Image Specialist'),
+                            'goal': agent_config.get('goal', 'Generate high-quality product images'),
+                            'backstory': agent_config.get('backstory', 'You are a professional product photographer'),
+                            'multimodal': agent_config.get('multimodal', True),
+                            'max_iter': agent_config.get('max_iter', 15),
+                            'verbose': agent_config.get('verbose', True)
+                        })
             else:
-                # Initial generation
-                result = await self._generate_from_reference(
-                    reference_image_url,
-                    product_name,
-                    product_features,
-                    style_requirements
-                )
-            
-            return AgentResult(
-                success=True,
-                data={
-                    'image_data': result.image_data,
-                    'prompt': result.prompt,
-                    'product_name': product_name
-                },
-                metadata={
-                    'reference_url': reference_image_url,
-                    'regenerated': regenerate
-                }
-            )
-            
-        except Exception as e:
-            self.log_error(f"Image generation failed: {str(e)}")
-            return AgentResult(
-                success=False,
-                error=str(e)
-            )
+                # Fallback defaults if YAML not found
+                kwargs.update({
+                    'name': 'image_generator',
+                    'role': 'Product Image Specialist',
+                    'goal': 'Generate high-quality product images that match brand standards and reference styles',
+                    'backstory': 'You are a professional product photographer and image generation expert.'
+                })
         
-    async def _generate_from_reference(
-        self,
-        reference_image_url: str,
-        product_name: str,
-        product_features: list[str],
-        style_requirements: Optional[Dict[str, str]] = None
-    ) -> GenerationResult:
-        """
-        Generate product image from reference.
+        # Add tools for image generation
+        if 'tools' not in kwargs:
+            kwargs['tools'] = [
+                ImageGenerationTool(),
+                ImageStorageTool(),
+                ImageRetrievalTool()
+            ]
         
-        Args:
-            reference_image_url: URL of reference image
-            product_name: Name of the product
-            product_features: Key features to highlight
-            style_requirements: Optional style requirements
-            
-        Returns:
-            GenerationResult with generated image
-        """
-        # Download reference image
-        reference_data = await self.storage.download_image(reference_image_url)
-        
-        # Prepare reference image
-        reference_data = await self.openai_service.prepare_image(reference_data)
-        
-        # Build prompt
-        prompt = self._build_prompt(product_name, product_features, style_requirements)
-        
-        # Generate image
-        result = await self.openai_service.generate_image(
-            reference_image=reference_data,
-            prompt=prompt,
-            size=style_requirements.get('size', '1024x1024') if style_requirements else '1024x1024',
-            quality=style_requirements.get('quality', 'high') if style_requirements else 'high'
-        )
-        
-        return result
-    
-    async def _regenerate_with_feedback(
-        self,
-        reference_image_url: str,
-        original_prompt: str,
-        feedback: list[str],
-        style_requirements: Optional[Dict[str, str]] = None
-    ) -> GenerationResult:
-        """
-        Regenerate image with feedback incorporated.
-        
-        Args:
-            reference_image_url: URL of reference image
-            original_prompt: Original prompt used
-            feedback: List of improvements to make
-            style_requirements: Optional style requirements
-            
-        Returns:
-            GenerationResult with new image
-        """
-        # Download reference image
-        reference_data = await self.storage.download_image(reference_image_url) 
-        reference_data = await self.openai_service.prepare_image(reference_data)
-        
-        # Enhance prompt with feedback
-        enhanced_prompt = self._enhance_prompt_with_feedback(original_prompt, feedback)
-        
-        # Generate new image
-        result = await self.openai_service.generate_image(
-            reference_image=reference_data,
-            prompt=enhanced_prompt,
-            size=style_requirements.get('size', '1024x1024') if style_requirements else '1024x1024',
-            quality=style_requirements.get('quality', 'high') if style_requirements else 'high'
-        )
-        
-        return result
-        
-    def _build_prompt(
-        self,
-        product_name: str,
-        product_features: list[str],
-        style_requirements: Optional[Dict[str, str]] = None
-    ) -> str:
-        """Build generation prompt."""
-        prompt_parts = [
-            f"Professional product photography of {product_name}.",
-            f"Key features: {', '.join(product_features[:3])}." if product_features else "",
-            "Style: Clean, modern, professional.",
-            f"Background: {style_requirements.get('background', 'pure white')}." if style_requirements else "Background: pure white.",
-            f"Lighting: {style_requirements.get('lighting', 'studio lighting with soft shadows')}." if style_requirements else "Lighting: studio lighting with soft shadows.",
-            "High quality, sharp focus, match reference image style exactly."
-        ]
-        
-        return " ".join(filter(None, prompt_parts))
-        
-    def _enhance_prompt_with_feedback(self, original_prompt: str, feedback: list[str]) -> str:
-        """Add feedback to prompt."""
-        if not feedback:
-            return original_prompt
-            
-        enhanced = f"{original_prompt}\n\nIMPORTANT REQUIREMENTS:\n"
-        for item in feedback[:5]:  # Limit to 5 items
-            enhanced += f"- {item}\n"
-            
-        return enhanced
+        super().__init__(**kwargs)
     
     def create_generation_task(
-        self, 
+        self,
         reference_url: str,
         product_name: str,
-        features: list[str],
+        features: List[str],
         style: Optional[Dict[str, str]] = None
     ) -> Task:
         """Create a CrewAI task for image generation."""
+        # Build a comprehensive description for the task
+        style_desc = ""
+        if style:
+            style_parts = []
+            if 'background' in style:
+                style_parts.append(f"Background: {style['background']}")
+            if 'lighting' in style:
+                style_parts.append(f"Lighting: {style['lighting']}")
+            if 'atmosphere' in style:
+                style_parts.append(f"Atmosphere: {style['atmosphere']}")
+            style_desc = "\n".join(style_parts)
+        
         description = f"""Generate a high-quality product image for {product_name}.
+
+Reference image: {reference_url}
+Key features to highlight:
+{chr(10).join(f"- {feature}" for feature in features)}
+
+{style_desc}
+
+Steps:
+1. First, retrieve and analyze the reference image using the retrieve_image tool
+2. Understand the product's key features and how to best showcase them
+3. Create a detailed prompt that captures the essence of the reference style while highlighting the product features
+4. Use the generate_image tool to create the product image
+5. Review the generated image to ensure it meets quality standards
+6. If satisfied, store the image using the store_image tool
+
+Focus on creating an image that:
+- Matches the reference image's style and quality
+- Clearly showcases all product features
+- Has professional lighting and composition
+- Is suitable for e-commerce use
+"""
         
-        Reference image: {reference_url}
-        Key features to highlight: {', '.join(features)}
-        Style requirements: {style or 'Standard product photography'}
-        
-        Use the gpt-image-1 model to create a professional product image that matches 
-        the reference style exactly while highlighting the product features.
-        """
-        
-        expected_output = """A high-quality product image that:
-        1. Matches the reference image style
-        2. Clearly shows all product features
-        3. Has professional lighting and composition
-        4. Is suitable for e-commerce use
-        """
+        expected_output = """A successfully generated and stored product image with:
+1. URL of the stored image
+2. The prompt used for generation
+3. Confirmation that the image matches requirements
+4. Any relevant metadata about the generation process
+"""
         
         return self.create_task(description, expected_output)
+    
+    async def execute(self, context: Dict[str, Any]) -> AgentResult:
+        """
+        Execute method for compatibility with BaseAgent.
+        
+        Note: In the new architecture, agents work through CrewAI's task system,
+        not through direct execution. This method is here for compatibility only.
+        """
+        return AgentResult(
+            success=True,
+            data={
+                "message": "This agent now works through CrewAI tasks and tools"
+            }
+        )

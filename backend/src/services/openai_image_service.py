@@ -50,8 +50,7 @@ class OpenAIImageService:
         self,
         reference_image: bytes,
         prompt: str,
-        size: str = "1024x1024",
-        quality: str = "high"  # Note: gpt-image-1 doesn't use quality param, kept for interface consistency
+        size: str = "1024x1024"
     ) -> GenerationResult:
         """
         Generate image from reference using gpt-image-1.
@@ -60,7 +59,6 @@ class OpenAIImageService:
             reference_image: Reference image bytes
             prompt: Generation prompt
             size: Output size
-            quality: Output quality
             
         Returns:
             GenerationResult with image data
@@ -212,3 +210,19 @@ Carefully analyze both images and provide scores for each aspect. Be specific ab
             
         output.seek(0)
         return output.read()
+    
+    # Synchronous wrapper methods for testing
+    def prepare_image_sync(self, image_data: bytes, max_size_mb: int = 4) -> bytes:
+        """Synchronous wrapper for prepare_image."""
+        import asyncio
+        return asyncio.run(self.prepare_image(image_data, max_size_mb))
+    
+    def generate_image_sync(
+        self,
+        reference_image: bytes,
+        prompt: str,
+        size: str = "1024x1024"
+    ) -> GenerationResult:
+        """Synchronous wrapper for generate_image."""
+        import asyncio
+        return asyncio.run(self.generate_image(reference_image, prompt, size))

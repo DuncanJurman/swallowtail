@@ -35,6 +35,8 @@ When using a library make to sure to adhere to the most up to date documentation
 
 ### 3 — Testing
 
+USE POETRY TO RUN TESTS
+
 - **T-1 (MUST)** For a simple function, colocate unit tests in `*.spec.ts` in same directory as source file.
 - **T-2 (MUST)** For any API change, add/extend integration tests in `packages/api/test/*.spec.ts`.
 - **T-3 (MUST)** ALWAYS separate pure-logic unit tests from DB-touching integration tests.

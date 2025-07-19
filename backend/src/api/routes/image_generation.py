@@ -6,6 +6,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from ...workflows.image_generation_workflow import ImageGenerationWorkflow
+from ...flows.image_generation_flow import ImageGenerationFlow
+from uuid import UUID
 
 
 logger = logging.getLogger(__name__)
@@ -130,3 +132,105 @@ async def get_generation_status(task_id: str):
         "progress": 50,
         "message": "Evaluating generated image quality"
     }
+
+
+# Flow-based endpoints
+class FlowImageGenerationRequest(BaseModel):
+    """Request model for flow-based image generation."""
+    product_id: str = Field(..., description="Product UUID")
+    reference_image_url: str = Field(..., description="URL or path to reference image")
+    product_name: str = Field(..., description="Name of the product")
+    product_features: List[str] = Field(..., description="Key features to highlight")
+    style_requirements: Optional[dict] = Field(default_factory=dict, description="Style requirements")
+    approval_threshold: float = Field(0.85, ge=0.0, le=1.0, description="Quality threshold for approval")
+
+
+class FlowImageGenerationResponse(BaseModel):
+    """Response model for flow-based image generation."""
+    success: bool
+    image_url: Optional[str] = None
+    attempts: int
+    metadata: dict
+
+
+@router.post("/generate-flow", response_model=FlowImageGenerationResponse)
+async def generate_product_image_with_flow(request: FlowImageGenerationRequest):
+    """
+    Generate a product image using CrewAI Flow.
+    
+    This endpoint uses the new flow-based architecture which:
+    1. Orchestrates image generation and evaluation crews
+    2. Automatically handles feedback loops
+    3. Manages state throughout the process
+    4. Returns the final approved image or error details
+    """
+    try:
+        logger.info(f"Starting flow-based image generation for product: {request.product_id}")
+        
+        # Validate product_id as UUID
+        try:
+            product_uuid = UUID(request.product_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid product_id format. Must be a valid UUID.")
+        
+        # Create flow instance
+        flow = ImageGenerationFlow()
+        
+        # Prepare product info
+        product_info = {
+            "name": request.product_name,
+            "features": request.product_features,
+            "style": request.style_requirements,
+            "threshold": request.approval_threshold
+        }
+        
+        # Execute flow
+        result = await flow.generate_image_for_product(
+            product_id=product_uuid,
+            reference_url=request.reference_image_url,
+            product_info=product_info
+        )
+        
+        return FlowImageGenerationResponse(
+            success=result["success"],
+            image_url=result.get("image_url"),
+            attempts=result.get("attempts", 0),
+            metadata=result.get("metadata", {})
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Flow-based image generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Flow status endpoints
+@router.get("/flow-status/{product_id}")
+async def get_flow_generation_status(product_id: str):
+    """
+    Get the status of a flow-based image generation.
+    
+    Note: This requires the flow instance to be stored in a
+    persistent way (e.g., Redis, database) for production use.
+    """
+    try:
+        # Validate product_id
+        try:
+            UUID(product_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid product_id format")
+        
+        # In production, this would retrieve the flow instance
+        # from persistent storage and check its status
+        return {
+            "product_id": product_id,
+            "status": "not_implemented",
+            "message": "Status tracking requires persistent flow storage"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Status check error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

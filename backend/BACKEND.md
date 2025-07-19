@@ -10,10 +10,14 @@ backend/
 │   ├── agents/         # AI agents implementation
 │   ├── api/           # FastAPI routes and endpoints
 │   ├── core/          # Core utilities
+│   ├── crews/         # CrewAI crew definitions
+│   ├── flows/         # CrewAI Flow orchestrations
 │   ├── models/        # Data models
 │   ├── services/      # External service integrations
-│   └── utils/         # Helper utilities (future)
+│   ├── tools/         # Agent tools and utilities
+│   └── workflows/     # Legacy workflow implementations
 ├── tests/             # Test files
+├── docs/              # Documentation
 ├── run.py            # Application entry point
 └── pyproject.toml    # Poetry configuration
 ```
@@ -364,6 +368,7 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 9. **Persistent Storage**: PostgreSQL database via Supabase for business data
 10. **Database Migrations**: Alembic for schema version control
 11. **Image Generation**: AI-powered product image generation with quality evaluation
+12. **File Storage**: Supabase Storage integration for images and videos
 
 ## Research Workshop
 
@@ -451,6 +456,32 @@ The image generation system uses OpenAI's gpt-image-1 model to create high-quali
   - `generate_image()`: Create product images from references
   - `evaluate_images()`: Structured evaluation with detailed scoring breakdown
   - `prepare_image()`: Optimize images for API constraints
+
+##### `src/services/openai_client.py`
+- **Purpose**: Centralized OpenAI client management
+- **Features**:
+  - Singleton pattern for client reuse
+  - Automatic API key validation
+  - Shared client instance across services
+
+#### Tools
+
+##### `src/tools/image_generation_tool.py`
+- **Purpose**: CrewAI tool for generating images using OpenAI API
+- **Key Features**:
+  - Handles async operations in synchronous context
+  - Uses nest-asyncio for event loop management
+  - Accepts file:// URLs for local reference images
+  - Returns temporary image path for further processing
+- **Main Method**: `_run()` - Synchronous interface for CrewAI
+
+##### `src/tools/image_storage_tool.py`
+- **Purpose**: CrewAI tool for storing images to Supabase
+- **Key Features**:
+  - Handles async storage operations
+  - Manages product-based file organization
+  - Returns public URLs for stored images
+- **Main Method**: `_run()` - Stores images and returns URLs
 
 #### Agents
 
@@ -548,6 +579,31 @@ The image generation system uses OpenAI's gpt-image-1 model to create high-quali
 5. **Iteration**: Up to max_attempts tries with targeted improvements
 6. **Output**: Final approved image URL with detailed scoring breakdown
 
+### Implementation Status
+
+✅ **Completed**:
+- ImageGenerationTool with async/sync handling using nest-asyncio
+- ImageStorageTool for Supabase integration
+- ImageGenerationCrew using CrewAI @CrewBase pattern
+- Multimodal agents with vision capabilities
+- Output parsing for extracting generated image paths
+- Comprehensive test suite:
+  - Unit tests for state models and crews
+  - Integration tests with real API calls
+  - Direct tool testing for faster validation
+  - End-to-end crew execution tests
+- Successfully generates product images (e.g., LED Squirtle in dorm room)
+- Images saved to `/output/generated_images/` for validation
+
+✅ **Completed**:
+- ImageEvaluationCrew implementation with structured outputs
+- Flow-based orchestration with feedback loops
+- Image generation and evaluation integration
+
+🚧 **Pending**:
+- API endpoint integration
+- Supabase storage integration (currently saves locally)
+
 ### Configuration
 
 - **Environment Variables**:
@@ -556,8 +612,31 @@ The image generation system uses OpenAI's gpt-image-1 model to create high-quali
 
 ### Testing
 
+#### Unit Tests
+- **File**: `tests/unit/test_image_generation_state.py`
+  - ImageGenerationState model validation
+  - State serialization/deserialization
+  - Default value handling
+
+- **File**: `tests/unit/test_image_generation_crew.py`
+  - Crew initialization
+  - Agent configuration
+  - Task creation
+
+#### Integration Tests
+- **File**: `tests/integration/test_image_tool_direct.py`
+  - Direct ImageGenerationTool testing
+  - Multiple size generation
+  - Error handling
+  - Real API calls with timeout handling
+
+- **File**: `tests/integration/test_image_generation_workflow.py`
+  - End-to-end crew execution
+  - Flow integration with feedback loops
+  - Error handling scenarios
+  - Real image generation and storage
+
 - **File**: `tests/workflows/test_image_generation_workflow.py`
-- **Coverage**:
   - Successful first-attempt generation
   - Regeneration with feedback
   - Max attempts handling
@@ -592,6 +671,284 @@ The image generation system uses OpenAI's gpt-image-1 model to create high-quali
 }
 ```
 
+## Task Management System (Enhanced with CrewAI)
+
+### Overview
+The Task Management System allows users to create natural language tasks for their products, which are then interpreted and executed by specialized agents through CrewAI's native orchestration capabilities. The system now leverages CrewAI's hierarchical processing, planning, reasoning, and delegation features.
+
+### Architecture Changes
+
+#### Enhanced Base Agent (`src/agents/base.py`)
+- **Major Enhancements**:
+  - Full CrewAI feature support (delegation, reasoning, planning, memory)
+  - Configurable parameters for all CrewAI capabilities
+  - Support for YAML configuration loading
+  - Enhanced task creation with guardrails, async execution, and structured outputs
+  - `from_config` class method for creating agents from YAML
+
+#### CrewAI Integration (`src/crews/`)
+- **New CrewBase** (`src/crews/base.py`):
+  - Base class using CrewAI's native patterns
+  - YAML configuration loading
+  - Before/after kickoff hooks
+  - Shared state integration
+  - Standardized crew creation
+
+- **Product Task Crew** (`src/crews/product_task_crew.py`):
+  - Hierarchical crew implementation
+  - Dynamic task generation based on execution plans
+  - Automatic agent selection
+  - Planning and reasoning enabled
+  - Real-time task status updates
+
+#### Configuration System (`src/config/`)
+- **Agent Configurations** (`src/config/agents.yaml`):
+  - All agents defined in YAML format
+  - Consistent role, goal, and backstory definitions
+  - CrewAI-specific settings (delegation, reasoning, etc.)
+  - Includes: product_orchestrator, image_generator, image_evaluator, market_researcher, content_writer, pricing_analyst, seo_specialist
+
+- **Task Templates** (`src/config/tasks.yaml`):
+  - Predefined task configurations
+  - Expected outputs with guardrails
+  - Context dependencies
+  - Support for structured output formats
+
+### Components
+
+#### Models
+
+##### `src/models/task.py`
+- **Purpose**: Task-related data structures
+- **Models**:
+  - `TaskPriority`: Enum for priority levels (URGENT=1, HIGH=3, MEDIUM=5, LOW=7, TRIVIAL=9)
+  - `TaskCreateRequest`: Request model for creating tasks
+  - `TaskUpdateRequest`: Request model for updating tasks
+  - `TaskStatusUpdate`: Simplified status update model
+  - `ProductTask`: Complete task model with all fields
+  - `TaskResponse`: API response model
+  - `TaskListResponse`: Paginated response model
+
+#### Database
+
+##### Task Table (`product_tasks`)
+- **Purpose**: Store user-created tasks for products
+- **Fields**:
+  - `id`: UUID primary key
+  - `product_id`: Foreign key to products table
+  - `task_description`: Natural language task description
+  - `status`: TaskStatus enum (PENDING, IN_PROGRESS, COMPLETED, FAILED, CANCELLED)
+  - `priority`: Integer (1-9, lower is higher priority)
+  - `assigned_agent`: Agent type handling the task
+  - `result_data`: JSONB field for execution results
+  - `error_message`: Error details if failed
+  - Timestamps: created_at, started_at, completed_at
+  - `created_by`: User who created the task
+
+#### API Endpoints
+
+##### `src/api/routes/tasks.py`
+- **Endpoints**:
+  - `POST /api/v1/products/{product_id}/tasks`: Create new task (with auto_execute option)
+  - `GET /api/v1/products/{product_id}/tasks`: List product tasks (with pagination/filtering)
+  - `GET /api/v1/tasks/{task_id}`: Get task details
+  - `PUT /api/v1/tasks/{task_id}`: Update task
+  - `PUT /api/v1/tasks/{task_id}/status`: Update task status only
+  - `DELETE /api/v1/tasks/{task_id}`: Delete task (only if PENDING)
+  - `POST /api/v1/tasks/{task_id}/execute`: Execute a specific task
+- **New Features**:
+  - Auto-execute option when creating tasks
+  - Background task execution
+  - Integration with new orchestrator
+
+#### Agents
+
+##### Product Orchestrator (`src/agents/product_orchestrator.py`)
+- **Complete Rewrite**:
+  - Lightweight wrapper that delegates to CrewAI crews
+  - Creates ProductTaskCrew for each task
+  - No manual orchestration logic
+  - Leverages CrewAI's hierarchical process
+
+##### Specialized Agents (Configured in YAML)
+- **All agents now support**:
+  - Delegation capabilities (configurable)
+  - Reasoning and planning
+  - Memory and context management
+  - Custom LLM configurations
+  - Tool assignments
+
+##### Dummy Agent Implementations
+- **Created for testing**:
+  - `market_research.py`: Returns mock market data
+  - `content_writer.py`: Generates sample content
+  - `pricing_analyst.py`: Provides pricing recommendations
+  - `seo_specialist.py`: Returns SEO suggestions
+
+### CrewAI Task Execution Flow
+
+1. **Task Creation**: User creates task via API
+2. **Orchestrator Initialization**: ProductOrchestrator creates ProductTaskCrew
+3. **Task Interpretation**: Orchestrator agent analyzes task using reasoning
+4. **Execution Planning**: Creates structured plan with subtasks
+5. **Dynamic Crew Assembly**: Builds crew with required agents
+6. **Hierarchical Execution**: Manager LLM coordinates agent collaboration
+7. **Delegation & Collaboration**: Agents can delegate and ask questions
+8. **Status Updates**: Real-time updates via SharedState
+9. **Result Aggregation**: Final output stored in database
+
+### Key Improvements
+
+1. **Native CrewAI Features**:
+   - Hierarchical processing with manager LLM
+   - Built-in planning capabilities
+   - Agent reasoning before execution
+   - Automatic delegation handling
+
+2. **Configuration-Driven**:
+   - Agents defined in YAML
+   - Tasks templates for consistency
+   - Easy to add new agents/tasks
+
+3. **Better Orchestration**:
+   - No manual delegation logic
+   - CrewAI handles agent coordination
+   - Structured execution plans
+
+4. **Enhanced Capabilities**:
+   - Context window management
+   - Memory across executions
+   - Structured output support
+   - Human-in-the-loop options
+
+### Example Tasks
+
+- "Research competitor pricing for this product"
+- "Generate new product images with white background"
+- "Write an SEO-optimized product description"
+
+### CrewAI Flows (`src/flows/`)
+
+#### Overview
+CrewAI Flows provide a more sophisticated way to orchestrate complex workflows with conditional logic, feedback loops, and state management. This is the recommended approach for workflows that require:
+- Multiple evaluation steps
+- Retry logic with feedback
+- Complex routing decisions
+- State persistence across steps
+
+#### Flow Architecture
+
+##### Base Components
+- **Flow State Models** (`src/flows/models.py`):
+  - `ImageGenerationState`: Pydantic model tracking generation attempts, feedback, and results
+  - Ensures type safety and serialization support
+  - Tracks errors, attempts, and approval status
+
+##### Image Generation Flow (`src/flows/image_generation_flow.py`)
+- **Purpose**: Orchestrates image generation with automatic quality control
+- **Key Features**:
+  - Uses `@start`, `@router`, and `@listen` decorators for flow control
+  - Automatic retry with feedback incorporation
+  - State management throughout the process
+  - Temporary file cleanup
+- **Flow Steps**:
+  1. `generate_initial_image()`: Starts generation process
+  2. `evaluate_generated_image()`: Routes to evaluation crew
+  3. `regenerate_with_feedback()`: Handles retry logic
+  4. `finalize_image()`: Stores approved images
+  5. `handle_failure()`: Manages error cases
+- **Public API**:
+  - `generate_image_for_product()`: Async method for external callers
+  - `get_generation_status()`: Check current flow status
+
+##### Supporting Crews
+- **ImageGenerationCrew** (`src/crews/image_generation_crew.py`):
+  - Uses CrewAI's @CrewBase decorator pattern
+  - Multimodal agents with vision capabilities
+  - Integrated with ImageGenerationTool and ImageStorageTool
+  - Accepts feedback from previous attempts
+  - Enhanced parsing for extracting generated image paths
+  
+- **ImageEvaluationCrew** (`src/crews/image_evaluation_crew.py`):
+  - Dedicated quality assessment crew with multimodal vision capabilities
+  - Compares generated vs reference images using GPT-4o
+  - Uses structured output with Pydantic model (`ImageEvaluationOutput`)
+  - Provides type-safe evaluation results including:
+    - Individual category scores (0-100): visual fidelity, product accuracy, technical quality, professional appearance, e-commerce suitability
+    - Overall score (weighted average)
+    - Approval decision based on configurable threshold
+    - Specific actionable feedback items
+    - Strengths and weaknesses analysis
+    - Confidence level (High/Medium/Low)
+  - Configurable approval thresholds
+  - Strict product matching - different products automatically fail
+  - No regex parsing needed - leverages CrewAI's `output_pydantic` parameter
+  - Handles local file paths by removing file:// prefix for compatibility
+
+#### Flow Tools (`src/tools/flow_tools.py`)
+
+##### ImageGenerationFlowTool
+- **Purpose**: Allows agents to trigger image generation flows
+- **Features**:
+  - Wraps complex flow logic in simple tool interface
+  - Manages flow instances per product
+  - Handles async execution in sync contexts
+- **Integration**: Can be added to any agent's toolset
+
+##### ImageGenerationFlowStatusTool
+- **Purpose**: Check status of ongoing generations
+- **Returns**: Current state, attempts, approval status, etc.
+
+#### API Integration
+
+##### Flow-Based Endpoints (`src/api/routes/image_generation.py`)
+- `POST /images/generate-flow`: Trigger flow-based generation
+- `GET /images/flow-status/{product_id}`: Check generation status
+- **Models**:
+  - `FlowImageGenerationRequest`: Input validation
+  - `FlowImageGenerationResponse`: Structured output
+
+#### Integration Patterns
+
+1. **Direct Flow Usage**:
+   ```python
+   flow = ImageGenerationFlow()
+   result = await flow.generate_image_for_product(...)
+   ```
+
+2. **Agent Tool Integration**:
+   ```python
+   from src.tools.flow_tools import create_flow_tools
+   generation_tool, status_tool = create_flow_tools()
+   agent = Agent(tools=[generation_tool, status_tool])
+   ```
+
+3. **Manager Agent Pattern**: See `tests/integration/test_manager_agent_flow.py`
+
+#### Benefits of Flow Architecture
+
+1. **Separation of Concerns**: Each crew focuses on one responsibility
+2. **Automatic Orchestration**: Flow handles routing and retries
+3. **State Persistence**: Can resume interrupted workflows
+4. **Better Error Handling**: Structured error states and recovery
+5. **Modularity**: Easy to add new steps or modify flow logic
+6. **Testability**: Each component can be tested independently
+
+#### When to Use Flows vs Single Crews
+
+**Use Flows when**:
+- Multiple evaluation/decision points
+- Retry logic with feedback loops
+- Complex conditional routing
+- Need to persist state across steps
+- Long-running workflows
+
+**Use Single Crews when**:
+- Simple, linear workflows
+- Single-shot operations
+- No retry/feedback needed
+- Stateless operations
+
 ## Next Steps
 
 1. **Research Workshop Implementation**:
@@ -621,38 +978,95 @@ The image generation system uses OpenAI's gpt-image-1 model to create high-quali
    - Background task processing
    - Advanced error handling and retries
    - Metrics and monitoring
+   - ✅ Task Management System (completed)
 
 ## Testing
+
+### Test Runner
+A convenient test runner script is provided:
+```bash
+# List available test categories
+python run_tests.py --list
+
+# Run all tests
+python run_tests.py all
+
+# Run specific category
+python run_tests.py unit          # Unit tests only
+python run_tests.py integration   # Integration tests only
+python run_tests.py crews         # Crew tests only
+
+# Run with options
+python run_tests.py unit -v       # Verbose output
+python run_tests.py all -c        # With coverage report
+python run_tests.py crews -k "evaluation"  # Match pattern
+```
 
 ### Test Structure
 ```
 tests/
-├── conftest.py              # Pytest configuration and fixtures
-├── test_celery.py          # Unit tests for Celery configuration
-├── services/
-│   ├── test_pinecone.py    # Unit tests for Pinecone service
-│   └── test_pinecone_integration.py  # Integration tests with Pinecone
-└── integration/
-    └── test_celery_integration.py  # Integration tests requiring services
+├── TESTING.md               # Comprehensive testing documentation
+├── run_tests.py            # Test runner script
+├── conftest.py             # Pytest configuration and fixtures
+├── agents/                 # Individual agent tests
+├── crews/                  # CrewAI crew implementation tests
+├── e2e/                    # End-to-end tests
+├── fixtures/               # Test fixtures and data
+├── flows/                  # CrewAI flow tests
+├── infrastructure/         # Database, storage, Celery tests
+├── integration/            # Component interaction tests
+├── performance/            # Performance and load tests
+├── reference_images/       # Test images for evaluation
+├── services/               # External service tests
+├── unit/                   # Fast, isolated component tests
+└── workflows/              # Legacy workflow tests
 ```
 
 ### Test Categories
-- **Unit Tests**: Run with `poetry run pytest -m unit`
-  - Celery configuration tests
-  - Task decorator tests
-  - Mocked service tests
-  - Pinecone service unit tests with mocked dependencies
+- **Unit Tests**: Fast, isolated component tests
+  - Model validation tests
+  - Crew initialization tests
+  - Configuration tests
   
-- **Integration Tests**: Run with `poetry run pytest -m integration`
-  - End-to-end task execution
-  - Worker communication tests
-  - Pinecone vector operations (requires API key)
-  - Requires Redis and Celery worker running
+- **Integration Tests**: Component interaction with real services
+  - Image evaluation with real images
+  - Workflow execution tests
+  - Service integration tests
+  
+- **Crew Tests**: CrewAI crew implementations
+  - Evaluation crew tests
+  - Generation crew tests
+  - Direct execution tests
+  
+- **Flow Tests**: CrewAI flow orchestrations
+  - Flow model tests
+  - Flow tool integration
+  - Complete flow execution
+  
+- **Infrastructure Tests**: Core components
+  - Database connectivity
+  - Storage integration
+  - Celery task queue
+
+### Key Test Files
+
+#### Image Evaluation Tests
+- `tests/integration/test_image_evaluation_crew.py`: Comprehensive evaluation tests
+  - Tests with identical images (high scores expected)
+  - Tests with different products (should fail)
+  - Structured output validation
+  - Error handling for invalid images
+
+#### Reference Images
+- `tests/reference_images/`: Test images for evaluation
+  - `led-squirtle.jpg`: Primary reference image
+  - `led-squirtle2.jpg`: Identical product for matching tests
+  - `led-mew.jpg`: Different product for rejection tests
 
 ### Running Tests
 ```bash
 # Unit tests only (fast, no dependencies)
-PYTHONPATH=. poetry run pytest -m unit -v
+poetry run pytest tests/unit/ -v
 
 # Integration tests (requires Redis + Celery worker)
 PYTHONPATH=. poetry run pytest -m integration -v
