@@ -1,303 +1,255 @@
-"""API routes for product task management."""
+"""Enhanced task API endpoints with filtering and queue integration."""
 
-import logging
-from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
+from sqlalchemy.orm import Session
 
-from ...core.database import get_db
-from ...core.state import SharedState
-from ...models.database import ProductTask, Product, TaskStatus
-from ...models.task import (
-    TaskCreateRequest,
-    TaskResponse,
-    TaskListResponse,
-    TaskStatusUpdate,
-    TaskUpdateRequest,
+from src.core.sync_database import get_db
+from src.tasks.queue_service import TaskQueueService
+from src.models.instance import Instance, InstanceTask, InstanceTaskStatus, TaskPriority
+from src.models.instance_schemas import (
+    TaskSubmission, 
+    InstanceTaskResponse, 
+    TaskListFilters,
+    TaskUpdateRequest
 )
-from ...agents.product_orchestrator import ProductOrchestrator
 
-logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1", tags=["tasks"])
+router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-@router.post("/products/{product_id}/tasks", response_model=TaskResponse)
-async def create_task(
-    product_id: UUID,
-    task_data: TaskCreateRequest,
-    db: AsyncSession = Depends(get_db),
-    auto_execute: bool = Query(False, description="Automatically execute the task after creation"),
-) -> TaskResponse:
-    """Create a new task for a product."""
-    # Verify product exists
-    result = await db.execute(select(Product).where(Product.id == product_id))
-    product = result.scalar_one_or_none()
+def get_current_user_id() -> UUID:
+    """Get the current user ID from auth context."""
+    # TODO: Implement actual authentication
+    # For now, return a fixed UUID for testing
+    return UUID("00000000-0000-0000-0000-000000000001")
+
+
+def verify_instance_access(
+    instance_id: UUID,
+    user_id: UUID,
+    db: Session
+) -> Instance:
+    """Verify user has access to the instance."""
+    instance = db.query(Instance).filter(
+        Instance.id == instance_id,
+        Instance.user_id == user_id
+    ).first()
     
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # Create new task
-    new_task = ProductTask(
-        product_id=product_id,
-        task_description=task_data.task_description,
-        priority=task_data.priority.value,
-        status=TaskStatus.PENDING,
-    )
-    
-    db.add(new_task)
-    await db.commit()
-    await db.refresh(new_task)
-    
-    logger.info(f"Created task {new_task.id} for product {product_id}")
-    
-    # Notify the system about new task (for real-time updates)
-    shared_state = SharedState()
-    await shared_state.set(f"new_task:{product_id}", str(new_task.id))
-    
-    # Auto-execute if requested
-    if auto_execute:
-        logger.info(f"Auto-executing task {new_task.id}")
-        orchestrator = ProductOrchestrator()
-        
-        # Start execution in background (fire and forget)
-        import asyncio
-        asyncio.create_task(
-            orchestrator.execute_task(
-                task_id=new_task.id,
-                task_description=new_task.task_description,
-                product_id=new_task.product_id
-            )
+    if not instance:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instance not found or access denied"
         )
     
-    return TaskResponse.model_validate(new_task)
+    return instance
 
 
-@router.get("/products/{product_id}/tasks", response_model=TaskListResponse)
-async def list_product_tasks(
-    product_id: UUID,
-    status: Optional[TaskStatus] = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-) -> TaskListResponse:
-    """List all tasks for a product with optional filtering."""
-    # Build query
-    query = select(ProductTask).where(ProductTask.product_id == product_id)
-    
-    if status:
-        query = query.where(ProductTask.status == status)
-    
-    # Add ordering - most recent first, then by priority
-    query = query.order_by(ProductTask.created_at.desc(), ProductTask.priority)
-    
-    # Count total tasks
-    count_query = select(func.count()).select_from(ProductTask).where(ProductTask.product_id == product_id)
-    if status:
-        count_query = count_query.where(ProductTask.status == status)
-    
-    result = await db.execute(count_query)
-    total = result.scalar() or 0
-    
-    # Apply pagination
-    offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size)
-    
-    # Execute query
-    result = await db.execute(query)
-    tasks = result.scalars().all()
-    
-    return TaskListResponse(
-        tasks=[TaskResponse.model_validate(task) for task in tasks],
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
-
-
-@router.get("/tasks/{task_id}", response_model=TaskResponse)
-async def get_task(
+def verify_task_access(
     task_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> TaskResponse:
-    """Get details of a specific task."""
-    query = select(ProductTask).where(ProductTask.id == task_id).options(
-        selectinload(ProductTask.product)
-    )
-    
-    result = await db.execute(query)
-    task = result.scalar_one_or_none()
+    user_id: UUID,
+    db: Session
+) -> InstanceTask:
+    """Verify user has access to the task."""
+    task = db.query(InstanceTask).join(Instance).filter(
+        InstanceTask.id == task_id,
+        Instance.user_id == user_id
+    ).first()
     
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found or access denied"
+        )
     
-    return TaskResponse.model_validate(task)
+    return task
 
 
-@router.put("/tasks/{task_id}", response_model=TaskResponse)
-async def update_task(
+@router.post("/instances/{instance_id}/tasks", 
+             response_model=InstanceTaskResponse,
+             status_code=status.HTTP_201_CREATED)
+def submit_task(
+    instance_id: UUID,
+    task_data: TaskSubmission,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """Submit a new task to the queue."""
+    # Verify access
+    instance = verify_instance_access(instance_id, user_id, db)
+    
+    # Submit task through queue service
+    queue_service = TaskQueueService(db)
+    task = queue_service.submit_task(instance_id, task_data)
+    
+    # Process scheduled tasks in background
+    if not task_data.scheduled_for or task_data.scheduled_for <= datetime.now():
+        background_tasks.add_task(process_scheduled_tasks, db)
+    
+    return task
+
+
+@router.get("/instances/{instance_id}/tasks",
+            response_model=List[InstanceTaskResponse])
+def list_tasks(
+    instance_id: UUID,
+    status: Optional[InstanceTaskStatus] = Query(None),
+    priority: Optional[TaskPriority] = Query(None),
+    created_after: Optional[datetime] = Query(None),
+    created_before: Optional[datetime] = Query(None),
+    scheduled_after: Optional[datetime] = Query(None),
+    scheduled_before: Optional[datetime] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """List tasks with advanced filtering."""
+    # Verify access
+    instance = verify_instance_access(instance_id, user_id, db)
+    
+    # Create filters
+    filters = TaskListFilters(
+        status=status,
+        priority=priority,
+        created_after=created_after,
+        created_before=created_before,
+        scheduled_after=scheduled_after,
+        scheduled_before=scheduled_before,
+        limit=limit,
+        offset=offset
+    )
+    
+    # Get tasks through queue service
+    queue_service = TaskQueueService(db)
+    tasks = queue_service.list_tasks(instance_id, filters)
+    
+    return tasks
+
+
+@router.get("/tasks/{task_id}",
+            response_model=InstanceTaskResponse)
+def get_task(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """Get task details with current status."""
+    task = verify_task_access(task_id, user_id, db)
+    return task
+
+
+@router.get("/tasks/{task_id}/status")
+def get_task_status(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """Get detailed task status including Celery information."""
+    task = verify_task_access(task_id, user_id, db)
+    
+    queue_service = TaskQueueService(db)
+    status = queue_service.get_task_status(task_id)
+    
+    return status
+
+
+@router.patch("/tasks/{task_id}",
+              response_model=InstanceTaskResponse)
+def update_task(
     task_id: UUID,
     update_data: TaskUpdateRequest,
-    db: AsyncSession = Depends(get_db),
-) -> TaskResponse:
-    """Update a task's details."""
-    # Get existing task
-    result = await db.execute(select(ProductTask).where(ProductTask.id == task_id))
-    task = result.scalar_one_or_none()
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """Update task properties (priority, status, etc)."""
+    task = verify_task_access(task_id, user_id, db)
     
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    queue_service = TaskQueueService(db)
+    updated_task = queue_service.update_task(task_id, update_data)
     
-    # Update fields if provided
-    if update_data.status is not None:
-        task.status = update_data.status
-        
-        # Update timestamps based on status
-        if update_data.status == TaskStatus.IN_PROGRESS and not task.started_at:
-            task.started_at = datetime.now(timezone.utc)
-        elif update_data.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
-            task.completed_at = datetime.now(timezone.utc)
-    
-    if update_data.priority is not None:
-        task.priority = update_data.priority.value
-        
-    if update_data.assigned_agent is not None:
-        task.assigned_agent = update_data.assigned_agent
-        
-    if update_data.result_data is not None:
-        task.result_data = update_data.result_data
-        
-    if update_data.error_message is not None:
-        task.error_message = update_data.error_message
-    
-    await db.commit()
-    await db.refresh(task)
-    
-    logger.info(f"Updated task {task_id}")
-    
-    return TaskResponse.model_validate(task)
+    return updated_task
 
 
-@router.put("/tasks/{task_id}/status", response_model=TaskResponse)
-async def update_task_status(
+@router.post("/tasks/{task_id}/cancel",
+             status_code=status.HTTP_204_NO_CONTENT)
+def cancel_task(
     task_id: UUID,
-    status_update: TaskStatusUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> TaskResponse:
-    """Update only the status of a task (convenience endpoint)."""
-    # Get existing task
-    result = await db.execute(select(ProductTask).where(ProductTask.id == task_id))
-    task = result.scalar_one_or_none()
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """Cancel a pending or running task."""
+    task = verify_task_access(task_id, user_id, db)
     
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    queue_service = TaskQueueService(db)
+    success = queue_service.cancel_task(task_id)
     
-    # Update status
-    task.status = status_update.status
-    
-    # Update timestamps
-    if status_update.status == TaskStatus.IN_PROGRESS and not task.started_at:
-        task.started_at = datetime.now(timezone.utc)
-    elif status_update.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
-        task.completed_at = datetime.now(timezone.utc)
-        
-    # Update optional fields
-    if status_update.message:
-        if status_update.status == TaskStatus.FAILED:
-            task.error_message = status_update.message
-            
-    if status_update.result_data:
-        task.result_data = status_update.result_data
-    
-    await db.commit()
-    await db.refresh(task)
-    
-    logger.info(f"Updated task {task_id} status to {status_update.status}")
-    
-    # Notify about status change
-    shared_state = SharedState()
-    await shared_state.set(
-        f"task_status_change:{task.product_id}:{task_id}", 
-        status_update.status.value
-    )
-    
-    return TaskResponse.model_validate(task)
-
-
-@router.delete("/tasks/{task_id}")
-async def delete_task(
-    task_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Delete a task (only if in PENDING status)."""
-    # Get existing task
-    result = await db.execute(select(ProductTask).where(ProductTask.id == task_id))
-    task = result.scalar_one_or_none()
-    
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    
-    # Only allow deletion of pending tasks
-    if task.status != TaskStatus.PENDING:
+    if not success:
         raise HTTPException(
-            status_code=400, 
-            detail="Can only delete tasks in PENDING status"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task cannot be cancelled in its current state"
         )
     
-    await db.delete(task)
-    await db.commit()
-    
-    logger.info(f"Deleted task {task_id}")
-    
-    return {"message": "Task deleted successfully"}
+    return
 
 
-@router.post("/tasks/{task_id}/execute")
-async def execute_task(
+@router.post("/tasks/{task_id}/retry",
+             response_model=InstanceTaskResponse)
+def retry_task(
     task_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Execute a pending task using the Product Orchestrator."""
-    # Get the task
-    result = await db.execute(
-        select(ProductTask).where(ProductTask.id == task_id)
-    )
-    task = result.scalar_one_or_none()
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """Retry a failed task."""
+    task = verify_task_access(task_id, user_id, db)
     
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    queue_service = TaskQueueService(db)
     
-    # Only execute pending tasks
-    if task.status != TaskStatus.PENDING:
+    try:
+        retried_task = queue_service.retry_task(task_id)
+        return retried_task
+    except ValueError as e:
         raise HTTPException(
-            status_code=400,
-            detail=f"Task is {task.status.value}, can only execute PENDING tasks"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
+
+
+@router.post("/process-scheduled",
+             include_in_schema=False)
+def trigger_scheduled_processing(
+    db: Session = Depends(get_db)
+):
+    """Manually trigger processing of scheduled tasks (admin endpoint)."""
+    queue_service = TaskQueueService(db)
+    count = queue_service.process_scheduled_tasks()
     
-    # Create orchestrator and execute
-    orchestrator = ProductOrchestrator()
+    return {"processed": count}
+
+
+def process_scheduled_tasks(db: Session):
+    """Background task to process scheduled tasks."""
+    try:
+        queue_service = TaskQueueService(db)
+        queue_service.process_scheduled_tasks()
+    except Exception as e:
+        print(f"Error processing scheduled tasks: {e}")
+
+
+# Register processors on import
+def register_task_processors():
+    """Register all task processors with the queue service."""
+    from src.tasks.processors.default_processor import DefaultTaskProcessor
+    from src.tasks.processors.content_creation_processor import ContentCreationProcessor
     
-    # Execute the task asynchronously
-    result = await orchestrator.execute_task(
-        task_id=task_id,
-        task_description=task.task_description,
-        product_id=task.product_id
-    )
-    
-    if result.success:
-        logger.info(f"Successfully executed task {task_id}")
-        return {
-            "message": "Task execution started",
-            "task_id": str(task_id),
-            "status": "executing"
-        }
-    else:
-        logger.error(f"Failed to execute task {task_id}: {result.error}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Task execution failed: {result.error}"
-        )
+    # Register processors
+    TaskQueueService.register_processor('default', DefaultTaskProcessor)
+    TaskQueueService.register_processor('general', DefaultTaskProcessor)
+    TaskQueueService.register_processor('content_creation', ContentCreationProcessor)
+
+
+# Register processors when module is imported
+register_task_processors()

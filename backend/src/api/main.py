@@ -2,9 +2,12 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import socketio
 
 from ..core.config import get_settings
-from .routes import agents, checkpoints, health, image_generation, tasks
+from ..core.websocket import sio as socketio_server
+from .routes import checkpoints, health, image_generation, tasks
+from . import instances
 
 settings = get_settings()
 
@@ -31,11 +34,6 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health.router, tags=["health"])
     app.include_router(
-        agents.router,
-        prefix=f"{settings.api_prefix}/agents",
-        tags=["agents"]
-    )
-    app.include_router(
         checkpoints.router,
         prefix=f"{settings.api_prefix}/checkpoints",
         tags=["checkpoints"]
@@ -46,11 +44,24 @@ def create_app() -> FastAPI:
         tags=["image-generation"]
     )
     app.include_router(
+        instances.router,
+        prefix=settings.api_prefix,
+        tags=["instances"]
+    )
+    app.include_router(
         tasks.router,
+        prefix=settings.api_prefix,
         tags=["tasks"]
     )
     
     return app
 
 
+# Create FastAPI app
 app = create_app()
+
+# Create Socket.io ASGI app wrapper
+socket_app = socketio.ASGIApp(socketio_server, app)
+
+# Export the socket_app for uvicorn to use
+__all__ = ['app', 'socket_app']

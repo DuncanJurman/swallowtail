@@ -6,6 +6,11 @@ from .research import (
     TrendData, TrendSource, CompetitionLevel, MarketMaturity,
     MarketAnalysis, SupplierOption, MarketOpportunity, OpportunityScore
 )
+from .instance import Instance, InstanceAgent, InstanceTask, InstanceMedia, InstanceType, InstanceTaskStatus, TaskPriority
+from .instance_schemas import (
+    InstanceCreate, InstanceResponse, TaskSubmission, InstanceTaskResponse, InstanceMediaResponse,
+    TaskUpdateRequest, TaskExecutionStep, TaskListFilters
+)
 
 __all__ = [
     "ProductIdea",
@@ -23,4 +28,21 @@ __all__ = [
     "SupplierOption",
     "MarketOpportunity",
     "OpportunityScore",
+    # Instance models
+    "Instance",
+    "InstanceAgent",
+    "InstanceTask",
+    "InstanceMedia",
+    "InstanceType",
+    "InstanceTaskStatus",
+    "TaskPriority",
+    # Instance schemas
+    "InstanceCreate",
+    "InstanceResponse",
+    "TaskSubmission",
+    "InstanceTaskResponse",
+    "InstanceMediaResponse",
+    "TaskUpdateRequest",
+    "TaskExecutionStep",
+    "TaskListFilters",
 ]

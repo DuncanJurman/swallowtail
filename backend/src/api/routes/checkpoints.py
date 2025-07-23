@@ -5,14 +5,13 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ...agents.orchestrator import OrchestratorAgent
 from ...core.state import SharedState, StateKey
 from ...models.checkpoint import CheckpointStatus, HumanCheckpoint
 
 router = APIRouter()
 
-# Reuse the shared state and orchestrator from agents module
-from .agents import orchestrator, shared_state
+# Initialize shared state (TODO: Replace with instance-based system)
+shared_state = SharedState()
 
 
 class CheckpointResolution(BaseModel):
@@ -87,14 +86,8 @@ async def resolve_checkpoint(
     checkpoints_data[checkpoint_id] = checkpoint.model_dump()
     shared_state.set(StateKey.HUMAN_CHECKPOINTS, checkpoints_data)
     
-    # Resume workflow
-    result = await orchestrator.resume_after_checkpoint(
-        checkpoint_id,
-        resolution.approved,
-        resolution.data
-    )
-    
+    # TODO: Replace with instance-based task continuation
     return {
         "checkpoint_resolved": True,
-        "workflow_result": result.model_dump()
+        "message": "Legacy checkpoint system is deprecated. Please use instance-based task execution."
     }

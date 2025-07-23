@@ -1,7 +1,7 @@
 # Swallowtail Backend Architecture
 
 ## Overview
-The Swallowtail backend is built using Python with CrewAI (built on LangChain) for multi-agent orchestration, FastAPI for REST APIs, and Redis for shared state management.
+The Swallowtail backend is built using Python with CrewAI (built on LangChain) for multi-agent orchestration, FastAPI for REST APIs, PostgreSQL for data persistence, and Redis for shared state management. The system uses an instance-based architecture where each business/brand has its own isolated configuration and AI agents.
 
 ## Directory Structure
 ```
@@ -23,6 +23,51 @@ backend/
 ```
 
 ## Implemented Files
+
+### Instance Management System (NEW)
+
+#### `src/models/instance.py`
+- **Purpose**: Database models for instance-based multi-tenancy
+- **Key Models**:
+  - `Instance`: Business/brand instance with isolated configuration
+  - `InstanceAgent`: Agent configuration specific to an instance
+  - `InstanceTask`: User-submitted tasks for processing
+  - `InstanceMedia`: Reference images and media files
+- **Features**:
+  - Support for ECOMMERCE and SOCIAL_MEDIA instance types
+  - JSONB fields for flexible configuration storage
+  - Proper indexes for performance
+
+#### `src/models/instance_schemas.py`
+- **Purpose**: Pydantic schemas for instance API validation
+- **Key Schemas**:
+  - `InstanceCreate`: Request model for creating instances
+  - `InstanceResponse`: Response model with full instance data
+  - `TaskSubmission`: Natural language task submission
+  - `InstanceTaskResponse`: Task status and results
+
+#### `src/services/instance_service.py`
+- **Purpose**: Business logic for instance management
+- **Key Methods**:
+  - `create_instance()`: Creates instance with default agents
+  - `submit_task()`: Submits tasks for AI processing
+  - `get_instance_tasks()`: Retrieves tasks with filtering
+- **Features**:
+  - Automatic agent creation based on instance type
+  - User isolation and ownership validation
+
+#### `src/api/instances.py`
+- **Purpose**: RESTful API endpoints for instance management
+- **Endpoints**:
+  - `POST /instances/`: Create new instance
+  - `GET /instances/`: List user's instances
+  - `GET /instances/{id}`: Get specific instance
+  - `PATCH /instances/{id}`: Update instance
+  - `POST /instances/{id}/tasks`: Submit task
+  - `GET /instances/{id}/tasks`: List tasks
+- **Features**:
+  - Full CRUD operations with user authentication
+  - Task submission and status tracking
 
 ### Core Infrastructure
 
@@ -370,55 +415,6 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 11. **Image Generation**: AI-powered product image generation with quality evaluation
 12. **File Storage**: Supabase Storage integration for images and videos
 
-## Research Workshop
-
-### Overview
-The Research Workshop is a continuous discovery engine that operates independently from product instances, constantly scanning for trends and opportunities.
-
-### Components
-
-#### Research Workshop Tables
-- **trend_snapshots**: Raw trend data from various sources (Google Trends, social media, marketplaces)
-- **research_metrics**: Performance tracking for research agents
-- **market_opportunities**: Enhanced with scoring, review workflow, and detailed analysis fields
-
-#### Research Agents (Planned)
-1. **TrendScannerAgent**: Monitors multiple data sources for emerging trends
-2. **MarketAnalyzerAgent**: Deep dives into specific opportunities 
-3. **SourcingScoutAgent**: Identifies potential suppliers and pricing
-4. **OpportunityEvaluatorAgent**: Scores and ranks opportunities using ML
-
-### Database Schema Updates
-```sql
--- New tables for Research Workshop
-CREATE TABLE trend_snapshots (
-    id UUID PRIMARY KEY,
-    source VARCHAR(100),
-    keywords TEXT[],
-    metrics JSONB,
-    geographic_data JSONB,
-    captured_at TIMESTAMP,
-    processed BOOLEAN DEFAULT FALSE
-);
-
-CREATE TABLE research_metrics (
-    id UUID PRIMARY KEY,
-    agent_name VARCHAR(100),
-    execution_date DATE,
-    opportunities_found INTEGER,
-    opportunities_approved INTEGER,
-    success_rate NUMERIC(3,2),
-    average_score NUMERIC(3,2)
-);
-
--- Enhanced market_opportunities table
-ALTER TABLE market_opportunities ADD:
-    - status VARCHAR(50) -- pending, reviewed, approved, rejected, promoted
-    - score NUMERIC(3,2) -- 0.00-1.00 scoring
-    - market_analysis JSONB
-    - sourcing_options JSONB
-    - discovery_date TIMESTAMP
-    - review tracking fields
 ```
 
 ## Image Generation System
@@ -534,7 +530,7 @@ The image generation system uses OpenAI's gpt-image-1 model to create high-quali
 ##### `src/api/routes/image_generation.py`
 - **Endpoints**:
   - `POST /api/v1/images/generate`: Synchronous image generation with detailed scoring
-  - `POST /api/v1/images/generate-async`: Asynchronous generation (placeholder)
+  - `POST /api/v1/images/generate-async`: Asynchronous generation (🔄 DUMMY: returns placeholder - TODO: implement queue integration)
   - `GET /api/v1/images/status/{task_id}`: Check async task status
 - **Request Model**:
   ```python
@@ -779,11 +775,20 @@ The Task Management System allows users to create natural language tasks for the
   - Tool assignments
 
 ##### Dummy Agent Implementations
-- **Created for testing**:
-  - `market_research.py`: Returns mock market data
-  - `content_writer.py`: Generates sample content
-  - `pricing_analyst.py`: Provides pricing recommendations
-  - `seo_specialist.py`: Returns SEO suggestions
+- **Status**: 🔄 DUMMY IMPLEMENTATIONS
+- **Files**:
+  - `market_research.py`: 
+    - **Current**: Returns hardcoded market data
+    - **TODO**: Integrate with real market research APIs and web scraping
+  - `content_writer.py`: 
+    - **Current**: Returns template-based content
+    - **TODO**: Integrate with GPT-4 for actual content generation
+  - `pricing_analyst.py`: 
+    - **Current**: Returns random pricing suggestions
+    - **TODO**: Implement real pricing analysis with competitor data
+  - `seo_specialist.py`: 
+    - **Current**: Returns generic SEO tips
+    - **TODO**: Integrate with SEO analysis tools and keyword research
 
 ### CrewAI Task Execution Flow
 
@@ -948,6 +953,118 @@ CrewAI Flows provide a more sophisticated way to orchestrate complex workflows w
 - Single-shot operations
 - No retry/feedback needed
 - Stateless operations
+
+## Task Queue System (NEW)
+
+### Overview
+The task queue system provides scalable background task processing using Celery with Redis as the broker. It supports priority-based routing, retry mechanisms with exponential backoff, and real-time task tracking.
+
+### Components
+
+#### Enhanced Task Model (`src/models/instance.py`)
+- **Status**: ✅ Implemented
+- **Enhancements**:
+  - `TaskPriority` enum: URGENT, NORMAL, LOW
+  - Extended `InstanceTaskStatus`: SUBMITTED, QUEUED, PLANNING, ASSIGNED, IN_PROGRESS, REVIEW, COMPLETED, FAILED, CANCELLED, REJECTED
+  - New fields: priority, scheduled_for, recurring_pattern, parsed_intent, execution_steps, progress_percentage
+  - Output tracking: output_format, output_data, output_media_ids
+  - Processing metadata: processing_started_at, processing_ended_at, retry_count, parent_task_id
+
+#### Task Schemas (`src/models/instance_schemas.py`)
+- **Status**: ✅ Implemented
+- **New Schemas**:
+  - `TaskSubmission`: Natural language task submission with priority and scheduling
+  - `TaskUpdateRequest`: Update task status and progress
+  - `TaskExecutionStep`: Track individual execution steps
+  - `TaskListFilters`: Advanced filtering for task queries
+
+#### Base Task Processor (`src/tasks/base_processor.py`)
+- **Status**: ✅ Implemented
+- **Features**:
+  - Abstract base class for all task processors
+  - Context manager pattern for database session management
+  - Progress tracking and status updates
+  - Execution step management
+  - CrewAI integration points (ready for implementation)
+  - Intent parsing placeholder (to be enhanced with NLP/LLM)
+
+#### Queue Service (`src/tasks/queue_service.py`)
+- **Status**: ✅ Implemented
+- **Features**:
+  - Task submission and lifecycle management
+  - Priority-based queue routing (urgent → agents, normal → default, low → background)
+  - Intent parsing (🔄 DUMMY: basic keyword matching - TODO: NLP/LLM integration)
+  - Processor registration system
+  - Task cancellation and retry logic
+  - Scheduled task processing
+
+#### Task Processors
+
+##### Default Task Processor (`src/tasks/processors/default_processor.py`)
+- **Status**: 🔄 DUMMY IMPLEMENTATION
+- **Current**: Simulates task processing with 2-second delay
+- **TODO**: Replace with actual task delegation to Manager Agent
+
+##### Content Creation Processor (`src/tasks/processors/content_creation_processor.py`)
+- **Status**: 🔄 DUMMY IMPLEMENTATION
+- **Current**: 
+  - Simulates content creation workflow
+  - Returns mock social media content
+  - Fake platform optimization
+  - Dummy media generation
+- **TODO**: 
+  - Integrate with real content creation agents
+  - Connect to actual image/video generation services
+  - Implement real platform-specific optimization
+  - Add actual hashtag research
+
+### Celery Integration
+- **Status**: ✅ Implemented (reusing existing infrastructure)
+- **Configuration**: Three queues with priority routing
+- **Retry mechanism**: Exponential backoff with jitter
+
+### Testing
+- **Status**: ✅ Comprehensive test suite
+- **Coverage**:
+  - Base processor unit tests
+  - Queue service tests
+  - Processor tests (including dummy implementations)
+  - WebSocket tests
+  - API endpoint tests
+
+### WebSocket Support (`src/core/websocket.py`)
+- **Status**: ✅ Implemented
+- **Features**:
+  - Socket.io integration with FastAPI
+  - Real-time task updates (progress, status, execution steps)
+  - Instance-based rooms for targeted broadcasts
+  - Client subscription management
+  - Automatic reconnection handling
+- **Events**:
+  - Client → Server: `subscribe_instance`, `unsubscribe_instance`
+  - Server → Client: `task_update`, `execution_step`, `error`
+
+### Enhanced Task API (`src/api/routes/tasks.py`)
+- **Status**: ✅ Implemented
+- **Endpoints**:
+  - `POST /tasks/instances/{id}/tasks`: Submit task with priority and scheduling
+  - `GET /tasks/instances/{id}/tasks`: List tasks with advanced filtering
+  - `GET /tasks/tasks/{id}`: Get task details
+  - `GET /tasks/tasks/{id}/status`: Get detailed status including Celery info
+  - `PATCH /tasks/tasks/{id}`: Update task properties
+  - `POST /tasks/tasks/{id}/cancel`: Cancel pending/running task
+  - `POST /tasks/tasks/{id}/retry`: Retry failed task
+- **Filtering Options**:
+  - By status, priority, creation date, scheduled date
+  - Pagination with limit/offset
+  - Combines database and Celery status
+
+### Scheduled Task Runner (`src/tasks/scheduled_runner.py`)
+- **Status**: ✅ Implemented
+- **Features**:
+  - Celery Beat integration for periodic execution
+  - Processes scheduled tasks every 5 minutes
+  - Automatic retry on failure
 
 ## Next Steps
 

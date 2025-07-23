@@ -1,9 +1,10 @@
 """Database configuration and connection management."""
 
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Generator
 
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 from src.core.config import get_settings
 
@@ -34,6 +35,22 @@ AsyncSessionLocal = async_sessionmaker(
 # Create base class for declarative models
 Base = declarative_base()
 
+# Create synchronous engine for Celery tasks
+sync_engine = create_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+)
+
+# Create synchronous session factory
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=sync_engine
+)
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency to get database session."""
@@ -53,3 +70,12 @@ async def init_db() -> None:
 async def close_db() -> None:
     """Close database connections."""
     await engine.dispose()
+
+
+def get_session() -> Generator[Session, None, None]:
+    """Get synchronous database session for Celery tasks."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

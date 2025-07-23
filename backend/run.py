@@ -37,7 +37,7 @@ def main() -> None:
     logging.info(f"Starting Swallowtail API on {settings.api_host}:{settings.api_port}")
     
     uvicorn.run(
-        "src.api.main:app",
+        "src.api.main:socket_app",
         host=settings.api_host,
         port=settings.api_port,
         reload=settings.debug,

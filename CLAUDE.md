@@ -11,7 +11,7 @@ When you are asked a question about what is currently implemented review fronten
 ---
 
 ### 1 — Before Coding
-When using a library make to sure to adhere to the most up to date documentation and do so by using context7 to search for that library and fully understanding how to correctly use it. 
+Make sure to refer to most up to date documentation using context7 if not found in docs. Refer to the crew ai documenetation found at backend/docs/crew_ai_doc.md for best practices, patterns, and all details pertaining to the framework
 
 - **BP-1 (MUST)** Ask the user clarifying questions.
 - **BP-2 (SHOULD)** Draft and confirm an approach for complex work.  
@@ -37,7 +37,7 @@ When using a library make to sure to adhere to the most up to date documentation
 
 USE POETRY TO RUN TESTS
 
-- **T-1 (MUST)** For a simple function, colocate unit tests in `*.spec.ts` in same directory as source file.
+- **T-1 (MUST)** For a simple function, colocate unit tests in `*.spec.ts` for frontend in same directory as source file.
 - **T-2 (MUST)** For any API change, add/extend integration tests in `packages/api/test/*.spec.ts`.
 - **T-3 (MUST)** ALWAYS separate pure-logic unit tests from DB-touching integration tests.
 - **T-4 (SHOULD)** Prefer integration tests over heavy mocking.  
@@ -72,7 +72,7 @@ USE POETRY TO RUN TESTS
 ---
 ### 8 - Backend.md and Frontend.md 
 
-Everytime you make a change to either the backend and frontend document it accordingly in the .md file with its functionality, dependcies etc. 
+Everytime you make a change to either the backend and frontend document it accordingly in the .md file with its functionality, dependecies etc. 
 
 ## Writing Functions Best Practices
 
