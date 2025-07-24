@@ -1,23 +1,26 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowRight, Bot, Zap, Globe } from 'lucide-react'
+import Link from 'next/link'
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+    <div className="min-h-screen bg-gradient-to-b from-[--color-gray-50] to-white">
       {/* Hero Section */}
       <div className="container mx-auto px-4 py-16 text-center">
-        <h1 className="mb-6 text-5xl font-bold tracking-tight text-gray-900 sm:text-6xl">
+        <h1 className="mb-6 text-5xl font-bold tracking-tight text-[--color-gray-900] sm:text-6xl">
           AI-Powered Business Management
         </h1>
-        <p className="mx-auto mb-10 max-w-2xl text-xl text-gray-600">
+        <p className="mx-auto mb-10 max-w-2xl text-xl text-[--color-gray-600]">
           Manage multiple businesses with intelligent AI agents that understand your brand and execute
           tasks autonomously.
         </p>
         <div className="flex justify-center gap-4">
-          <Button size="lg" className="gap-2">
-            Get Started <ArrowRight className="h-4 w-4" />
-          </Button>
+          <Link href="/dashboard">
+            <Button size="lg" className="gap-2">
+              Get Started <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
           <Button size="lg" variant="outline">
             Learn More
           </Button>
@@ -26,7 +29,7 @@ export default function Home() {
 
       {/* Features Section */}
       <div className="container mx-auto px-4 py-16">
-        <h2 className="mb-12 text-center text-3xl font-bold text-gray-900">
+        <h2 className="mb-12 text-center text-3xl font-bold text-[--color-gray-900]">
           Powerful Features for Modern Entrepreneurs
         </h2>
         <div className="grid gap-8 md:grid-cols-3">
@@ -39,7 +42,7 @@ export default function Home() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[--color-gray-600]">
                 From content creation to customer service, our AI agents handle complex tasks with
                 your brand voice.
               </p>
@@ -55,7 +58,7 @@ export default function Home() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[--color-gray-600]">
                 No technical knowledge required. Just tell the system what you want to accomplish.
               </p>
             </CardContent>
@@ -70,7 +73,7 @@ export default function Home() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[--color-gray-600]">
                 Each business maintains its own identity, agents, and operational workflows.
               </p>
             </CardContent>
@@ -88,9 +91,11 @@ export default function Home() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button size="lg" variant="secondary" className="gap-2">
-              Start Free Trial <ArrowRight className="h-4 w-4" />
-            </Button>
+            <Link href="/dashboard">
+              <Button size="lg" variant="secondary" className="gap-2">
+                Start Free Trial <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       </div>
