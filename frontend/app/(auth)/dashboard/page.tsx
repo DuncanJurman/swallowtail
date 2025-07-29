@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../../components/ui/button'
 import { Plus, TrendingUp, Activity, Users, DollarSign } from 'lucide-react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn } from '../../../lib/utils'
 
 // Mock data - will be replaced with API calls
 const stats = [

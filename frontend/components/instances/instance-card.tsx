@@ -4,7 +4,7 @@ import { Badge } from '../ui/badge'
 import { Instance, InstanceType } from '../../types/instance'
 import { Building2, Globe, MoreVertical, Activity, Clock, Users } from 'lucide-react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn } from '../../lib/utils'
 
 interface InstanceCardProps {
   instance: Instance
