@@ -15,7 +15,7 @@ import {
   ChevronUp
 } from 'lucide-react'
 import { TaskPriority } from '../../types/task'
-import { cn } from '../../lib/utils'
+import { cn } from '@/lib/utils'
 
 interface TaskInputProps {
   instanceId: string
