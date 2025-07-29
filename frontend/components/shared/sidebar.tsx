@@ -11,6 +11,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  Shield,
 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { useState } from 'react'
@@ -22,6 +24,8 @@ const navigation = [
 ]
 
 const bottomNavigation = [
+  { name: 'Privacy Policy', href: '/privacy', icon: Shield },
+  { name: 'Terms of Service', href: '/terms', icon: FileText },
   { name: 'Help', href: '/help', icon: HelpCircle },
   { name: 'Logout', href: '/logout', icon: LogOut },
 ]
@@ -33,7 +37,7 @@ export function Sidebar() {
   return (
     <div
       className={cn(
-        'flex h-full flex-col border-r bg-[--color-card] transition-all duration-300',
+        'flex h-full flex-col border-r bg-card transition-all duration-300',
         collapsed ? 'w-16' : 'w-64'
       )}
     >
@@ -41,13 +45,13 @@ export function Sidebar() {
       <div className="flex h-16 items-center justify-between border-b px-4">
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-[--color-primary]" />
+            <div className="h-8 w-8 rounded-lg bg-primary" />
             <span className="text-xl font-semibold">Swallowtail</span>
           </Link>
         )}
         {collapsed && (
           <Link href="/dashboard" className="mx-auto">
-            <div className="h-8 w-8 rounded-lg bg-[--color-primary]" />
+            <div className="h-8 w-8 rounded-lg bg-primary" />
           </Link>
         )}
       </div>
@@ -63,8 +67,8 @@ export function Sidebar() {
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-[--color-secondary] text-[--color-secondary-foreground]'
-                  : 'text-[--color-muted-foreground] hover:bg-[--color-secondary]/50 hover:text-[--color-secondary-foreground]'
+                  ? 'bg-secondary text-secondary-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground'
               )}
             >
               <item.icon className="h-5 w-5 flex-shrink-0" />

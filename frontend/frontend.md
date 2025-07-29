@@ -321,7 +321,19 @@ const { data, isLoading } = useQuery({
 4. Form validation needs enhancement
 5. No error handling for API calls
 
-## 📋 Recent Updates (July 29, 2025)
+## 📋 Recent Updates
+
+### July 29, 2025 - TikTok API Integration Preparation
+- Added Privacy Policy page (`/privacy`) with TikTok-specific data handling disclosures
+- Added Terms of Service page (`/terms`) with comprehensive service terms
+- Created Footer component with legal links visible on all pages
+- Updated sidebar navigation to include Privacy Policy and Terms links
+- Enhanced landing page with multi-account management features and instance architecture explanation
+- Added app icon placeholder (`/public/swallowtail-icon.svg`) for TikTok app submissions
+- Ensured all legal pages are publicly accessible without authentication
+- All pages now include proper footer with legal links for TikTok compliance
+
+### Previous Updates (July 29, 2025)
 
 ### Tailwind CSS Migration
 - Downgraded from Tailwind CSS v4 beta to v3.4.0 for stability

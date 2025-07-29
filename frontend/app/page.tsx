@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { ArrowRight, Bot, Zap, Shield, BarChart3, Globe, Users } from 'lucide-react'
+import { ArrowRight, Bot, Zap, Shield, BarChart3, Globe, Users, Building2, Layers } from 'lucide-react'
 
 export default function HomePage() {
   return (
@@ -14,8 +14,9 @@ export default function HomePage() {
               AI-Powered Business Management
             </h1>
             <p className="mx-auto mb-8 max-w-2xl text-lg text-muted-foreground sm:text-xl">
-              Manage multiple businesses effortlessly with intelligent AI agents that handle your
-              operations, marketing, and analytics.
+              Manage multiple businesses effortlessly with intelligent AI agents. Connect your TikTok, 
+              Instagram, and other social media accounts to automate content creation, posting, and 
+              engagement across all your brands from one powerful platform.
             </p>
             <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
               <Link href="/dashboard">
@@ -38,10 +39,12 @@ export default function HomePage() {
         <div className="container mx-auto max-w-6xl">
           <div className="mb-12 text-center">
             <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
-              Everything you need to succeed
+              One Platform, Multiple Businesses
             </h2>
             <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-              Our AI agents work 24/7 to manage your business operations, so you can focus on growth.
+              Whether you&apos;re managing 2 or 20 brands, our instance-based architecture keeps each 
+              business separate while giving you unified control. Perfect for entrepreneurs running 
+              multiple TikTok accounts, Instagram brands, or e-commerce stores.
             </p>
           </div>
 
@@ -140,6 +143,80 @@ export default function HomePage() {
                 </p>
               </CardContent>
             </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Multi-Account Management Section */}
+      <section className="px-4 py-20 md:py-32 bg-muted/30">
+        <div className="container mx-auto max-w-6xl">
+          <div className="grid gap-12 lg:grid-cols-2 items-center">
+            <div>
+              <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
+                Built for Multi-Account Management
+              </h2>
+              <p className="mb-6 text-lg text-muted-foreground">
+                Swallowtail&apos;s unique instance-based architecture is designed from the ground up for 
+                managing multiple businesses. Each instance is completely isolated with its own:
+              </p>
+              <ul className="space-y-3 mb-8">
+                <li className="flex items-start gap-3">
+                  <Building2 className="h-5 w-5 text-primary mt-0.5" />
+                  <span className="text-muted-foreground">Dedicated AI agents trained on your brand voice</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Globe className="h-5 w-5 text-primary mt-0.5" />
+                  <span className="text-muted-foreground">Separate social media account connections</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Shield className="h-5 w-5 text-primary mt-0.5" />
+                  <span className="text-muted-foreground">Isolated data and analytics</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Layers className="h-5 w-5 text-primary mt-0.5" />
+                  <span className="text-muted-foreground">Unified dashboard for all your businesses</span>
+                </li>
+              </ul>
+              <Link href="/instances">
+                <Button className="gap-2">
+                  Explore Instances <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Card className="bg-background">
+                <CardHeader>
+                  <CardTitle className="text-lg">E-commerce Instance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Perfect for online stores with:
+                  </p>
+                  <ul className="text-sm space-y-1 text-muted-foreground">
+                    <li>• Product catalog management</li>
+                    <li>• Inventory tracking</li>
+                    <li>• Order fulfillment</li>
+                    <li>• TikTok Shop integration</li>
+                  </ul>
+                </CardContent>
+              </Card>
+              <Card className="bg-background">
+                <CardHeader>
+                  <CardTitle className="text-lg">Social Media Instance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Ideal for content creators with:
+                  </p>
+                  <ul className="text-sm space-y-1 text-muted-foreground">
+                    <li>• Multi-platform posting</li>
+                    <li>• Content scheduling</li>
+                    <li>• Engagement automation</li>
+                    <li>• Performance analytics</li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </div>
       </section>
