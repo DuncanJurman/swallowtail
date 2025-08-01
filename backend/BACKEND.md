@@ -257,11 +257,66 @@ backend/
   - `delete_vectors()`: Remove specific vectors by ID
   - `delete_all_vectors()`: Clear entire namespace
   - `get_index_stats()`: Monitor index usage and statistics
-- **Configuration**:
-  - `PINECONE_API_KEY`: API authentication
-  - `PINECONE_INDEX_NAME`: Target index (default: "swallowtail-products")
-  - `PINECONE_ENVIRONMENT`: Deployment environment (default: "gcp-starter")
-- **Error Handling**: Custom `PineconeServiceError` for service-specific errors
+
+#### `src/services/tiktok/`
+- **Purpose**: TikTok API integration for OAuth and content posting
+- **Key Features**:
+  - OAuth 2.0 flow with CSRF protection
+  - Token management with automatic refresh
+  - Content posting API (sandbox mode)
+  - Encrypted credential storage
+  - Support for multiple TikTok accounts per instance
+- **Main Components**:
+  - `oauth.py`: OAuth flow implementation
+    - `generate_auth_url()`: Create authorization URL with state
+    - `exchange_code_for_token()`: Exchange auth code for tokens
+    - `refresh_access_token()`: Refresh expired tokens
+    - `get_user_info()`: Fetch TikTok user profile
+    - `save_credentials()`: Store encrypted tokens in database
+  - `content_api.py`: Content posting functionality
+    - `query_creator_info()`: Get creator permissions and limits
+    - `post_video_sandbox()`: Post videos (PULL_FROM_URL or FILE_UPLOAD)
+    - `check_post_status()`: Monitor post processing status
+  - `models.py`: Pydantic models for API data
+  - `config.py`: TikTok API configuration
+- **Environment Variables**:
+  - `TIKTOK_CLIENT_KEY`: TikTok app client key
+  - `TIKTOK_CLIENT_SECRET`: TikTok app client secret
+  - `TIKTOK_REDIRECT_URI`: OAuth callback URL
+  - `TIKTOK_SANDBOX_MODE`: Enable sandbox mode (default: true)
+
+#### `src/models/tiktok_credentials.py`
+- **Purpose**: Database model for storing TikTok OAuth credentials
+- **Key Features**:
+  - Encrypted storage of access and refresh tokens
+  - Automatic token expiration checking
+  - Support for multiple TikTok accounts per instance
+  - Optional account naming for easy identification
+  - Token refresh tracking
+- **Model**: `InstanceTikTokCredentials`
+  - Links to Instance via foreign key (no unique constraint - allows multiple accounts)
+  - Stores TikTok user info and granted scopes
+  - Tracks token expiration times
+  - Provides encryption/decryption properties
+  - Fields: id, instance_id, account_name, tiktok_open_id, display_name, avatar_url, access_token (encrypted), refresh_token (encrypted), scopes, user_info (JSONB)
+
+#### `src/api/routes/tiktok.py`
+- **Purpose**: REST API endpoints for TikTok integration
+- **Endpoints**:
+  - `POST /api/v1/tiktok/auth`: Generate TikTok OAuth URL
+    - Request: `{ instance_id: UUID, account_name?: string, scopes?: string[] }`
+    - Response: `{ auth_url: string, state: string }`
+  - `GET /api/v1/tiktok/callback`: Handle OAuth callback
+    - Query params: code, state, error?, error_description?
+    - Exchanges code for tokens and saves credentials
+  - `GET /api/v1/tiktok/accounts/{instance_id}`: List all TikTok accounts
+    - Returns array of connected accounts with token status
+    - Automatically refreshes expired tokens
+  - `POST /api/v1/tiktok/post`: Post content to TikTok
+    - Request: TikTokPostRequest with video_url, title, privacy settings
+    - Supports account selection for multi-account instances
+  - `DELETE /api/v1/tiktok/disconnect/{instance_id}/{account_id}`: Disconnect account
+    - Revokes token and removes from database
 
 ### Database Layer
 
@@ -756,6 +811,20 @@ The Task Management System allows users to create natural language tasks for the
   - Auto-execute option when creating tasks
   - Background task execution
   - Integration with new orchestrator
+
+##### `src/api/routes/tiktok.py` (NEW)
+- **Endpoints**:
+  - `POST /api/v1/tiktok/auth`: Generate TikTok OAuth URL (with optional account name)
+  - `GET /api/v1/tiktok/callback`: Handle OAuth callback and save credentials
+  - `GET /api/v1/tiktok/accounts/{instance_id}`: Get all connected TikTok accounts
+  - `POST /api/v1/tiktok/post`: Post content to TikTok (with account selection)
+  - `DELETE /api/v1/tiktok/disconnect/{instance_id}/{account_id}`: Disconnect specific account
+- **Features**:
+  - OAuth 2.0 flow with state validation
+  - Automatic token refresh when expired
+  - Multiple TikTok accounts per instance
+  - Account selection for content posting
+  - Sandbox mode content posting
 
 #### Agents
 

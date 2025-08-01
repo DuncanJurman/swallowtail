@@ -89,9 +89,9 @@ export function InstanceCard({ instance, metrics }: InstanceCardProps) {
 
         {/* Actions */}
         <div className="flex gap-2 pt-2">
-          <Link href={`/instances/${instance.id}`} className="flex-1">
+          <Link href={`/instances/${instance.id}/settings`} className="flex-1">
             <Button variant="outline" size="sm" className="w-full">
-              View Details
+              Settings
             </Button>
           </Link>
           <Link href={`/instances/${instance.id}/tasks`} className="flex-1">

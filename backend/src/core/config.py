@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     supabase_anon_key: Optional[str] = None
     supabase_service_key: Optional[str] = None
     
+    # TikTok Configuration
+    tiktok_client_key: Optional[str] = None
+    tiktok_client_secret: Optional[str] = None
+    tiktok_redirect_uri: str = "https://skipper-ecom.com/tiktok/callback"
+    tiktok_sandbox_mode: bool = True
+    
+    # Encryption key for token storage
+    encryption_key: Optional[str] = None
+    
     # Agent Configuration
     max_agent_iterations: int = 10
     agent_timeout_seconds: int = 300
@@ -57,7 +66,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     
     # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001", "https://skipper-ecom.com"]
     
     @property
     def is_production(self) -> bool:

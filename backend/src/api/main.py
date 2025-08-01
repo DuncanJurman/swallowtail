@@ -6,7 +6,7 @@ import socketio
 
 from ..core.config import get_settings
 from ..core.websocket import sio as socketio_server
-from .routes import checkpoints, health, image_generation, tasks
+from .routes import checkpoints, health, image_generation, tasks, tiktok
 from . import instances
 
 settings = get_settings()
@@ -52,6 +52,11 @@ def create_app() -> FastAPI:
         tasks.router,
         prefix=settings.api_prefix,
         tags=["tasks"]
+    )
+    app.include_router(
+        tiktok.router,
+        prefix=settings.api_prefix,
+        tags=["tiktok"]
     )
     
     return app

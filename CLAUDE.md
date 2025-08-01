@@ -37,6 +37,8 @@ Make sure to refer to most up to date documentation using context7 if not found 
 
 USE POETRY TO RUN TESTS
 
+ we want our tests to be robust and prove correctness do not write trivial mock tests
+
 - **T-1 (MUST)** For a simple function, colocate unit tests in `*.spec.ts` for frontend in same directory as source file.
 - **T-2 (MUST)** For any API change, add/extend integration tests in `packages/api/test/*.spec.ts`.
 - **T-3 (MUST)** ALWAYS separate pure-logic unit tests from DB-touching integration tests.

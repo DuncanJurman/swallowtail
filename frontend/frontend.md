@@ -323,6 +323,30 @@ const { data, isLoading } = useQuery({
 
 ## 📋 Recent Updates
 
+### July 31, 2025 - TikTok OAuth Integration (Phase 2)
+- **OAuth Flow Implementation**:
+  - Created TikTok API client (`/lib/tiktok-client.ts`) with account management
+  - Implemented OAuth popup handler (`/lib/tiktok-oauth.ts`) with secure message passing
+  - Added OAuth callback page (`/app/tiktok/callback/page.tsx`) with auto-close functionality
+- **Instance Settings Page**:
+  - Created settings page structure with tabbed interface
+  - Added platform connections tab for social media integrations
+  - Implemented responsive design with mobile support
+- **TikTok Connection Component** (`/components/instances/settings/tiktok-connection.tsx`):
+  - Support for multiple TikTok accounts per instance
+  - Account naming feature for easy identification
+  - Real-time token status indicators (active/expiring/expired)
+  - Account cards with profile info and quick actions
+  - Empty state design for first-time connections
+  - Sandbox mode indicators and warnings
+- **UI Components Added**:
+  - Tabs component (`/components/ui/tabs.tsx`) using Radix UI
+  - Custom TikTok icon component
+  - Enhanced dialog for account naming
+- **Type Safety**:
+  - Complete TypeScript interfaces for TikTok data (`/types/tiktok.ts`)
+  - Enhanced account types with computed properties (token expiry status)
+
 ### July 29, 2025 - TikTok API Integration Preparation
 - Added Privacy Policy page (`/privacy`) with TikTok-specific data handling disclosures
 - Added Terms of Service page (`/terms`) with comprehensive service terms
