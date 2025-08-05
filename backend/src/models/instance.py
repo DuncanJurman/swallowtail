@@ -43,7 +43,7 @@ class Instance(Base):
     __tablename__ = "instances"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False)  # Will add FK when user table exists
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name = Column(String(255), nullable=False)
     type = Column(SQLEnum(InstanceType), nullable=False)
     
@@ -58,6 +58,7 @@ class Instance(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
+    user = relationship("User", back_populates="instances")
     agents = relationship("InstanceAgent", back_populates="instance", cascade="all, delete-orphan")
     tasks = relationship("InstanceTask", back_populates="instance", cascade="all, delete-orphan")
     media = relationship("InstanceMedia", back_populates="instance", cascade="all, delete-orphan")
