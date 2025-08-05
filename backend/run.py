@@ -34,12 +34,17 @@ def main() -> None:
     setup_logging()
     settings = get_settings()
     
-    logging.info(f"Starting Swallowtail API on {settings.api_host}:{settings.api_port}")
+    # Use Railway's PORT env var if available, otherwise fallback to settings
+    import os
+    port = int(os.environ.get("PORT", settings.api_port))
+    host = "0.0.0.0"  # Railway requires binding to all interfaces
+    
+    logging.info(f"Starting Swallowtail API on {host}:{port}")
     
     uvicorn.run(
         "src.api.main:socket_app",
-        host=settings.api_host,
-        port=settings.api_port,
+        host=host,
+        port=port,
         reload=settings.debug,
         log_level=settings.log_level.lower(),
     )
