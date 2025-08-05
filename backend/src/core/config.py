@@ -1,7 +1,7 @@
 """Configuration management for the Swallowtail backend."""
 
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Annotated
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,21 +66,25 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     
-    # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001", "https://skipper-ecom.com"]
+    # CORS - Use Optional[str] to prevent automatic JSON parsing
+    cors_origins: Optional[str] = None
     
-    @field_validator('cors_origins', mode='before')
-    @classmethod
-    def parse_cors_origins(cls, v):
-        if isinstance(v, str):
-            # If it's a string, try to parse it as JSON
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Get CORS origins as a list."""
+        if not self.cors_origins:
+            return ["http://localhost:3000", "http://localhost:3001", "https://skipper-ecom.com"]
+        
+        # Try to parse as JSON first
+        if self.cors_origins.strip().startswith('['):
             try:
                 import json
-                return json.loads(v)
+                return json.loads(self.cors_origins)
             except:
-                # If JSON parsing fails, split by comma
-                return [origin.strip() for origin in v.split(',')]
-        return v
+                pass
+        
+        # Otherwise, split by comma
+        return [origin.strip() for origin in self.cors_origins.split(',')]
     
     @property
     def is_production(self) -> bool:
