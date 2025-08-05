@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,6 +68,19 @@ class Settings(BaseSettings):
     
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001", "https://skipper-ecom.com"]
+    
+    @field_validator('cors_origins', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            # If it's a string, try to parse it as JSON
+            try:
+                import json
+                return json.loads(v)
+            except:
+                # If JSON parsing fails, split by comma
+                return [origin.strip() for origin in v.split(',')]
+        return v
     
     @property
     def is_production(self) -> bool:
