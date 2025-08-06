@@ -19,15 +19,20 @@ config = context.config
 # Get database URL from settings
 settings = get_settings()
 
-# IMPORTANT: Always use direct connection for migrations
-# Migrations need DDL operations which don't work well with PgBouncer
-# If direct URL is not available, fall back to pooled but warn
-if settings.database_direct_url:
+# IMPORTANT: Use session pooler for migrations on Railway (IPv4 support)
+# Session pooler (port 5432) supports DDL operations needed for migrations
+# Direct connection fails on Railway due to IPv6
+if settings.database_session_pooler_url:
+    database_url = settings.database_session_pooler_url
+    print("Using session pooler connection for migrations (IPv4 compatible)")
+elif settings.database_direct_url and settings.environment != "production":
+    # Only use direct connection in development (IPv6 may work locally)
     database_url = settings.database_direct_url
-    print("Using direct database connection for migrations")
+    print("Using direct database connection for migrations (development)")
 else:
+    # Fall back to transaction pooler if nothing else available
     database_url = settings.database_url
-    print("WARNING: Using pooled connection for migrations. This may cause issues with DDL operations.")
+    print("WARNING: Using transaction pooler for migrations. Some DDL operations may fail.")
 
 # Escape % for ConfigParser
 database_url = database_url.replace("%", "%%")

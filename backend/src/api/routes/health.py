@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-import os
 
 from ...core.state import SharedState
 from ...core.tasks import check_celery_health
@@ -79,15 +78,9 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> HealthResponse:
 async def check_database_pool(db: AsyncSession) -> DatabasePoolStatus:
     """Check database connection pool status."""
     try:
-        # Determine connection type
-        use_pooled = (
-            os.getenv("USE_POOLED_CONNECTION", "").lower() == "true" 
-            or settings.environment == "production"
-            or not settings.database_direct_url
-        )
-        
-        connection_type = "pooled" if use_pooled else "direct"
-        database_url_type = "DATABASE_URL" if use_pooled else "DATABASE_DIRECT_URL"
+        # Always using transaction pooler now for IPv4 compatibility
+        connection_type = "transaction_pooler"
+        database_url_type = "DATABASE_URL"
         
         # Test basic connection
         result = await db.execute(text("SELECT current_database(), version()"))

@@ -402,22 +402,30 @@ backend/
 
 #### Database Configuration
 - **Environment Variables**:
-  - `DATABASE_URL`: PostgreSQL connection string (pooled via PgBouncer on port 6543) - Used in production
-  - `DATABASE_DIRECT_URL`: Direct connection (port 5432) - Used for migrations and optionally in development
-  - `USE_POOLED_CONNECTION`: Set to "true" to force pooled connection (auto-enabled in production)
+  - `DATABASE_URL`: Transaction pooler connection (port 6543) - Used for application queries
+  - `DATABASE_SESSION_POOLER_URL`: Session pooler connection (port 5432 on pooler domain) - Used for migrations
+  - `DATABASE_DIRECT_URL`: Direct connection (port 5432) - NOT USED (IPv6 incompatible with Railway)
   - `SUPABASE_URL`: Supabase project URL
   - `SUPABASE_ANON_KEY`: Public API key
   - `SUPABASE_SERVICE_KEY`: Service role key for backend
 
-#### Database Connection Solution (PgBouncer Compatibility)
-- **Issue Resolved**: Fixed `DuplicatePreparedStatementError` when using SQLAlchemy + asyncpg with PgBouncer
+#### Railway IPv6 & PgBouncer Connection Solution
+- **Issues Resolved**: 
+  1. `psycopg2.OperationalError: Network is unreachable` - Railway doesn't support IPv6
+  2. `DuplicatePreparedStatementError` when using SQLAlchemy + asyncpg with PgBouncer
+- **Root Causes**:
+  - Supabase direct connections use IPv6 which Railway doesn't support
+  - PgBouncer in transaction pooling mode doesn't support prepared statements
 - **Solution Implemented** (`src/core/database.py`):
+  - Always use Supabase pooler connections (IPv4 compatible)
+  - Transaction pooler (port 6543) for application queries
+  - Session pooler (port 5432 on pooler domain) for migrations
   - Set `statement_cache_size=0` to disable prepared statement caching
   - Generate unique statement names using UUID to avoid conflicts
-  - Automatically use pooled connection in production, direct connection in development
-  - Alembic migrations always use direct connection to avoid DDL issues
 - **Key Configuration**:
   ```python
+  # Always use transaction pooler for IPv4 compatibility
+  DATABASE_URL = settings.database_url  # port 6543
   connect_args = {
       "statement_cache_size": 0,  # Critical for PgBouncer
       "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",  # Unique names

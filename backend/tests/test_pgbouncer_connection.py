@@ -24,9 +24,7 @@ class TestPgBouncerConnection:
     async def test_pooled_connection_basic(self):
         """Test that basic queries work with pooled connection."""
         # Import after environment is set
-        from src.core.database import use_pooled, engine
-        
-        assert use_pooled == True, "Should be using pooled connection"
+        from src.core.database import engine
         
         # Use engine directly to avoid transaction issues in tests
         async with engine.connect() as conn:
@@ -94,7 +92,7 @@ class TestPgBouncerConnection:
             status = await check_database_pool(session)
             
             assert status.connected == True
-            assert status.connection_type == "pooled"
+            assert status.connection_type == "transaction_pooler"
             assert status.database_url_type == "DATABASE_URL"
             assert status.database_name == "postgres"
             assert status.postgresql_version is not None
@@ -113,7 +111,7 @@ class TestPgBouncerConnection:
             
             # Verify the response structure matches what health endpoint returns
             assert status.connected == True
-            assert status.connection_type == "pooled"
+            assert status.connection_type == "transaction_pooler"
             assert status.database_url_type == "DATABASE_URL"
             assert status.database_name is not None
             assert status.postgresql_version is not None
@@ -122,11 +120,11 @@ class TestPgBouncerConnection:
     @pytest.mark.asyncio
     async def test_connection_configuration(self):
         """Test that connection is configured correctly for PgBouncer."""
-        from src.core.database import engine, use_pooled, DATABASE_URL
+        from src.core.database import engine, DATABASE_URL
         
         # Verify configuration
-        assert use_pooled == True
         assert "asyncpg" in DATABASE_URL
+        assert "pooler.supabase.com:6543" in DATABASE_URL
         
         # Check connect_args (these are set at engine creation)
         # The key settings are:
@@ -144,9 +142,6 @@ async def run_all_tests():
     print("\n" + "=" * 60)
     print("PGBOUNCER CONNECTION TEST SUITE")
     print("=" * 60 + "\n")
-    
-    # Set environment for pooled connection
-    os.environ["USE_POOLED_CONNECTION"] = "true"
     
     test_suite = TestPgBouncerConnection()
     
