@@ -203,13 +203,19 @@ backend/
   - Required for instance access control
 
 #### `src/api/routes/health.py`
-- **Purpose**: Health check endpoint with dependency monitoring
+- **Purpose**: Health check endpoint with comprehensive dependency monitoring
 - **Endpoints**:
-  - `GET /health`: Check API, Redis, and Celery status
+  - `GET /health`: Check API, Redis, Celery, and Database status
 - **Response**: 
   - Overall health status ("healthy", "degraded", "error")
   - Redis connection status
   - Celery worker status and active worker list
+  - **Database status** (NEW):
+    - Connection type (pooled/direct)
+    - Database URL type being used
+    - Connection pool statistics
+    - PostgreSQL version
+  - Environment (production/development)
   - API version
 
 #### `src/api/routes/agents.py`
@@ -298,6 +304,7 @@ backend/
     - `get_user_info()`: Fetch TikTok user profile
     - `save_credentials()`: Store encrypted tokens in database with account name
     - State format: `instance_id:csrf_token:account_name` (account_name optional)
+    - Note: Uses re-query instead of `db.refresh()` for pgbouncer transaction pooling compatibility
   - `content_api.py`: Content posting functionality
     - `query_creator_info()`: Get creator permissions and limits
     - `post_video_sandbox()`: Post videos (PULL_FROM_URL or FILE_UPLOAD)
@@ -395,17 +402,27 @@ backend/
 
 #### Database Configuration
 - **Environment Variables**:
-  - `DATABASE_URL`: PostgreSQL connection string (pooled) - Use this for application connections
-  - `DATABASE_DIRECT_URL`: Direct connection for migrations (may not be available on all Supabase plans)
+  - `DATABASE_URL`: PostgreSQL connection string (pooled via PgBouncer on port 6543) - Used in production
+  - `DATABASE_DIRECT_URL`: Direct connection (port 5432) - Used for migrations and optionally in development
+  - `USE_POOLED_CONNECTION`: Set to "true" to force pooled connection (auto-enabled in production)
   - `SUPABASE_URL`: Supabase project URL
   - `SUPABASE_ANON_KEY`: Public API key
   - `SUPABASE_SERVICE_KEY`: Service role key for backend
 
-#### Database Connection Notes
-- **pgBouncer Compatibility**: Supabase uses pgBouncer for connection pooling. When using asyncpg directly:
-  - Set `statement_cache_size=0` to disable prepared statements
-  - Use the pooled DATABASE_URL for connections (not DIRECT_URL)
-  - See `src/utils/db_helper.py` for proper connection setup
+#### Database Connection Solution (PgBouncer Compatibility)
+- **Issue Resolved**: Fixed `DuplicatePreparedStatementError` when using SQLAlchemy + asyncpg with PgBouncer
+- **Solution Implemented** (`src/core/database.py`):
+  - Set `statement_cache_size=0` to disable prepared statement caching
+  - Generate unique statement names using UUID to avoid conflicts
+  - Automatically use pooled connection in production, direct connection in development
+  - Alembic migrations always use direct connection to avoid DDL issues
+- **Key Configuration**:
+  ```python
+  connect_args = {
+      "statement_cache_size": 0,  # Critical for PgBouncer
+      "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",  # Unique names
+  }
+  ```
 
 #### Testing Database Setup
 - **File**: `tests/test_database_setup.py`
@@ -417,6 +434,23 @@ backend/
   - Migration status
   - Schema structure
   - Row counts
+
+#### Testing PgBouncer Connection
+- **File**: `tests/test_pgbouncer_connection.py`
+- **Purpose**: Verify PgBouncer compatibility and connection pooling
+- **Usage**: 
+  ```bash
+  # Run directly (recommended)
+  USE_POOLED_CONNECTION=true PYTHONPATH=. poetry run python tests/test_pgbouncer_connection.py
+  
+  ```
+- **Tests**:
+  - Basic pooled connection functionality
+  - No DuplicatePreparedStatementError with multiple queries
+  - Transaction handling with pooled connection
+  - Connection pool status monitoring
+  - Health endpoint database status
+  - Connection configuration verification
 
 ### Entry Points
 
@@ -1279,7 +1313,13 @@ The following components have placeholder/dummy implementations that need to be 
   - Build: Nixpacks with Python 3.11
   - Start command: `python run.py`
   - Port binding: Railway's PORT environment variable
-  - Database migrations: Automatic via Alembic
+  - Database migrations: Automatic via Alembic (uses direct connection)
+- **Database Solution (August 2025)**:
+  - **Fixed**: PgBouncer compatibility issues causing `DuplicatePreparedStatementError`
+  - **How**: Disabled prepared statement caching and generate unique statement names
+  - **Result**: Stable pooled connections through PgBouncer in production
+  - Transaction pooling mode now works correctly with asyncpg
+  - SQLAlchemy operations modified to be pgbouncer-compatible (no `db.refresh()`)
 - **Environment Variables**:
   - All sensitive credentials stored in Railway dashboard
   - CORS_ORIGINS configured for production frontend

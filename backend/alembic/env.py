@@ -18,8 +18,17 @@ config = context.config
 
 # Get database URL from settings
 settings = get_settings()
-# Use pooled URL with psycopg2 for sync operations
-database_url = settings.database_url
+
+# IMPORTANT: Always use direct connection for migrations
+# Migrations need DDL operations which don't work well with PgBouncer
+# If direct URL is not available, fall back to pooled but warn
+if settings.database_direct_url:
+    database_url = settings.database_direct_url
+    print("Using direct database connection for migrations")
+else:
+    database_url = settings.database_url
+    print("WARNING: Using pooled connection for migrations. This may cause issues with DDL operations.")
+
 # Escape % for ConfigParser
 database_url = database_url.replace("%", "%%")
 config.set_main_option("sqlalchemy.url", database_url)
