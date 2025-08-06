@@ -35,8 +35,8 @@ class InstanceTikTokCredentials(Base):
     _refresh_token = Column("refresh_token", Text, nullable=False)
     
     # Token Expiration
-    access_token_expires_at = Column(DateTime, nullable=False)
-    refresh_token_expires_at = Column(DateTime, nullable=False)
+    access_token_expires_at = Column(DateTime(timezone=True), nullable=False)
+    refresh_token_expires_at = Column(DateTime(timezone=True), nullable=False)
     
     # Scopes
     scopes = Column(JSON, nullable=False)  # List of granted scopes
@@ -48,9 +48,9 @@ class InstanceTikTokCredentials(Base):
     is_active = Column(String(20), default="active", nullable=False)  # active, revoked, expired
     
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
-    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     instance = relationship("Instance", backref="tiktok_credentials")

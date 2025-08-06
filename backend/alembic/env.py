@@ -10,7 +10,13 @@ from src.core.database import Base
 from src.core.config import get_settings
 
 # Import all models to ensure they are registered with Base.metadata
-import src.models.database  # This imports all SQLAlchemy models
+import src.models.database  # Core database models
+import src.models.user  # User model
+import src.models.instance  # Instance model
+import src.models.tiktok_credentials  # TikTok credentials model
+import src.models.checkpoint  # Checkpoint model
+import src.models.product  # Product model
+import src.models.research  # Research model
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
