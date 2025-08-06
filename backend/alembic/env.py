@@ -23,16 +23,17 @@ settings = get_settings()
 # Session pooler (port 5432) supports DDL operations needed for migrations
 # Direct connection fails on Railway due to IPv6
 if settings.database_session_pooler_url:
+    # Always prefer session pooler when available (IPv4 compatible)
     database_url = settings.database_session_pooler_url
     print("Using session pooler connection for migrations (IPv4 compatible)")
-elif settings.database_direct_url and settings.environment != "production":
-    # Only use direct connection in development (IPv6 may work locally)
-    database_url = settings.database_direct_url
-    print("Using direct database connection for migrations (development)")
-else:
-    # Fall back to transaction pooler if nothing else available
+elif settings.database_url:
+    # Fall back to transaction pooler if session pooler not available
+    # This may have issues with some DDL operations
     database_url = settings.database_url
     print("WARNING: Using transaction pooler for migrations. Some DDL operations may fail.")
+else:
+    # This should never happen in production
+    raise ValueError("No database URL configured for migrations")
 
 # Escape % for ConfigParser
 database_url = database_url.replace("%", "%%")

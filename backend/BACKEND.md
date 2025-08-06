@@ -404,7 +404,6 @@ backend/
 - **Environment Variables**:
   - `DATABASE_URL`: Transaction pooler connection (port 6543) - Used for application queries
   - `DATABASE_SESSION_POOLER_URL`: Session pooler connection (port 5432 on pooler domain) - Used for migrations
-  - `DATABASE_DIRECT_URL`: Direct connection (port 5432) - NOT USED (IPv6 incompatible with Railway)
   - `SUPABASE_URL`: Supabase project URL
   - `SUPABASE_ANON_KEY`: Public API key
   - `SUPABASE_SERVICE_KEY`: Service role key for backend

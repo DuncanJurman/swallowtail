@@ -14,6 +14,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # Ignore extra environment variables (like deprecated DATABASE_DIRECT_URL)
     )
 
     # OpenAI Configuration
@@ -45,7 +46,6 @@ class Settings(BaseSettings):
     
     # Database Configuration
     database_url: Optional[str] = None
-    database_direct_url: Optional[str] = None
     database_session_pooler_url: Optional[str] = None  # Session pooler for migrations
     supabase_url: Optional[str] = None
     supabase_anon_key: Optional[str] = None

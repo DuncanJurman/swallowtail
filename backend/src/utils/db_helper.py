@@ -1,4 +1,4 @@
-"""Database connection helper for direct asyncpg connections."""
+"""Database connection helper for asyncpg connections using transaction pooler."""
 
 import re
 import asyncpg
@@ -8,15 +8,15 @@ from urllib.parse import unquote
 from src.core.config import get_settings
 
 
-async def get_asyncpg_connection(use_direct_url: bool = True) -> asyncpg.Connection:
-    """Get a direct asyncpg connection, parsing the database URL properly."""
+async def get_asyncpg_connection() -> asyncpg.Connection:
+    """Get an asyncpg connection using the transaction pooler URL."""
     settings = get_settings()
     
-    # Choose which URL to use
-    db_url = settings.database_direct_url if use_direct_url else settings.database_url
+    # Always use the transaction pooler URL (IPv4 compatible)
+    db_url = settings.database_url
     
     if not db_url:
-        raise ValueError("Database URL not configured")
+        raise ValueError("DATABASE_URL not configured")
     
     # Parse the PostgreSQL URL
     # Handle both postgresql:// and postgres:// prefixes
