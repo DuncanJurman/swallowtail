@@ -1,6 +1,6 @@
 """Database models for TikTok OAuth credentials."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, JSON, Index
@@ -48,8 +48,8 @@ class InstanceTikTokCredentials(Base):
     is_active = Column(String(20), default="active", nullable=False)  # active, revoked, expired
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     last_used_at = Column(DateTime, nullable=True)
     
     # Relationships
@@ -72,7 +72,26 @@ class InstanceTikTokCredentials(Base):
             # Generate a key for development - DO NOT use in production
             key = Fernet.generate_key().decode()
             os.environ['ENCRYPTION_KEY'] = key
-        return key.encode() if isinstance(key, str) else key
+            print(f"WARNING: Generated new encryption key for development. Set ENCRYPTION_KEY env var in production!")
+        
+        # Fernet expects bytes, so encode if it's a string
+        if isinstance(key, str):
+            key = key.encode('utf-8')
+        
+        # Validate the key format
+        try:
+            # This will raise an error if the key is not valid
+            Fernet(key)
+            return key
+        except Exception as e:
+            # If the key is invalid, generate a new one for development
+            print(f"ERROR: Invalid ENCRYPTION_KEY format: {e}")
+            print("Generating a new valid key...")
+            new_key = Fernet.generate_key()
+            print(f"Set this as your ENCRYPTION_KEY: {new_key.decode()}")
+            # For development, use the new key
+            os.environ['ENCRYPTION_KEY'] = new_key.decode()
+            return new_key
     
     @property
     def _cipher(self):
@@ -109,12 +128,12 @@ class InstanceTikTokCredentials(Base):
     @property
     def is_access_token_expired(self):
         """Check if access token is expired."""
-        return datetime.utcnow() >= self.access_token_expires_at
+        return datetime.now(timezone.utc) >= self.access_token_expires_at
     
     @property
     def is_refresh_token_expired(self):
         """Check if refresh token is expired."""
-        return datetime.utcnow() >= self.refresh_token_expires_at
+        return datetime.now(timezone.utc) >= self.refresh_token_expires_at
     
     def to_dict(self):
         """Convert to dictionary (without sensitive data)."""
