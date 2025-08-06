@@ -38,7 +38,8 @@ async def generate_auth_url(
     async with TikTokOAuthService() as service:
         auth_url, state = await service.generate_auth_url(
             instance_id=str(request.instance_id),
-            scopes=request.scopes
+            scopes=request.scopes,
+            account_name=request.account_name
         )
         
         # TODO: Store state in cache/db for verification
@@ -81,23 +82,27 @@ async def handle_callback(
             # Get user info
             user_info = await service.get_user_info(token_response.access_token)
             
-            # Extract instance_id from state
-            # In production, we should validate state from cache/db
-            # For now, we'll trust the state contains instance_id
-            instance_id = state.split(':')[0] if ':' in state else None
+            # Extract instance_id and account_name from state
+            # State format: "instance_id:csrf_token:account_name" (account_name is optional)
+            state_parts = state.split(':')
             
-            if not instance_id:
+            if len(state_parts) < 2:
                 raise HTTPException(
                     status_code=400,
-                    detail="Invalid state parameter - missing instance ID"
+                    detail="Invalid state parameter format"
                 )
+            
+            instance_id = state_parts[0]
+            # account_name is optional (3rd part)
+            account_name = state_parts[2] if len(state_parts) > 2 else None
             
             # Save credentials to database
             credentials = await service.save_credentials(
                 db=db,
                 instance_id=instance_id,
                 token_response=token_response,
-                user_info=user_info
+                user_info=user_info,
+                account_name=account_name
             )
             
             # Redirect to frontend success page

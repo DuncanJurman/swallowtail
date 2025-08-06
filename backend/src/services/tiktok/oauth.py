@@ -27,7 +27,7 @@ class TikTokOAuthService:
         self.config = tiktok_config
         self.client = httpx.AsyncClient()
         
-    async def generate_auth_url(self, instance_id: str, scopes: Optional[list[str]] = None) -> tuple[str, str]:
+    async def generate_auth_url(self, instance_id: str, scopes: Optional[list[str]] = None, account_name: Optional[str] = None) -> tuple[str, str]:
         """
         Generate TikTok authorization URL with CSRF state token.
         
@@ -35,8 +35,12 @@ class TikTokOAuthService:
             tuple: (auth_url, state_token)
         """
         # Generate CSRF state token - include instance_id for callback
-        state_data = f"{instance_id}:{secrets.token_urlsafe(32)}"
-        state = hashlib.sha256(state_data.encode()).hexdigest()
+        csrf_token = secrets.token_urlsafe(32)
+        # Create state that includes instance_id and csrf token
+        state_parts = [instance_id, csrf_token]
+        if account_name:
+            state_parts.append(account_name)
+        state = ":".join(state_parts)
         
         # Use default scopes if not provided
         if not scopes:
@@ -253,7 +257,8 @@ class TikTokOAuthService:
         db: AsyncSession,
         instance_id: str,
         token_response: TikTokTokenResponse,
-        user_info: Optional[TikTokUserInfo] = None
+        user_info: Optional[TikTokUserInfo] = None,
+        account_name: Optional[str] = None
     ) -> 'InstanceTikTokCredentials':
         """
         Save TikTok credentials to database.
@@ -304,6 +309,7 @@ class TikTokOAuthService:
                 tiktok_open_id=token_response.open_id,
                 tiktok_union_id=user_info.union_id if user_info else None,
                 display_name=user_info.display_name if user_info else token_response.open_id,
+                account_name=account_name,
                 avatar_url=user_info.avatar_url if user_info else None,
                 access_token=token_response.access_token,
                 refresh_token=token_response.refresh_token,
