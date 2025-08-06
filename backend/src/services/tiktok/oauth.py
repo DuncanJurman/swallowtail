@@ -322,9 +322,17 @@ class TikTokOAuthService:
             db.add(credentials)
         
         await db.commit()
-        await db.refresh(credentials)
         
-        return credentials
+        # Instead of refresh, query the object again to avoid prepared statements
+        # This is compatible with pgbouncer transaction pooling
+        stmt = select(InstanceTikTokCredentials).where(
+            InstanceTikTokCredentials.instance_id == UUID(instance_id),
+            InstanceTikTokCredentials.tiktok_open_id == token_response.open_id
+        )
+        result = await db.execute(stmt)
+        saved_credentials = result.scalar_one()
+        
+        return saved_credentials
     
     async def __aenter__(self):
         return self

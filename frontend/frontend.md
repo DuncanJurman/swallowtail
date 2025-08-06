@@ -26,13 +26,19 @@ frontend/
 │   │   ├── dashboard/         # Main dashboard page
 │   │   │   └── page.tsx      # Dashboard with stats & activity
 │   │   ├── instances/         # Instance management
-│   │   │   ├── page.tsx      # List all instances
+│   │   │   ├── page.tsx      # List all instances (with mock data)
 │   │   │   ├── [id]/         # Dynamic instance routes
-│   │   │   │   └── tasks/    # Task management
+│   │   │   │   ├── tasks/    # Task management
+│   │   │   │   │   ├── page.tsx         # Server component
+│   │   │   │   │   └── page-client.tsx  # Client component
+│   │   │   │   └── settings/ # Instance settings
 │   │   │   │       ├── page.tsx         # Server component
-│   │   │   │       └── page-client.tsx  # Client component
+│   │   │   │       └── page-client.tsx  # Client component with tabs
 │   │   │   └── new/          # Create new instance (pending)
 │   │   └── layout.tsx        # Auth layout with sidebar/topbar
+│   ├── tiktok/               # TikTok OAuth flow
+│   │   └── callback/         # OAuth callback handler
+│   │       └── page.tsx      # Handles OAuth response
 │   ├── globals.css           # Tailwind CSS imports & theme
 │   ├── layout.tsx            # Root layout
 │   └── page.tsx              # Landing page
@@ -44,12 +50,15 @@ frontend/
 │   │   ├── input.tsx        # Form input
 │   │   ├── textarea.tsx     # Multi-line input
 │   │   ├── badge.tsx        # Status indicators
-│   │   └── dialog.tsx       # Modal dialogs
+│   │   ├── dialog.tsx       # Modal dialogs
+│   │   └── tabs.tsx         # Tabbed interface (Radix UI)
 │   ├── shared/              # Shared layout components
 │   │   ├── sidebar.tsx      # Collapsible navigation
 │   │   └── topbar.tsx       # Search & user menu
 │   ├── instances/           # Instance-specific components
-│   │   └── instance-card.tsx # Display instance info
+│   │   ├── instance-card.tsx # Display instance info
+│   │   └── settings/        # Settings components
+│   │       └── tiktok-connection.tsx # TikTok OAuth management
 │   └── tasks/               # Task management components
 │       └── task-input.tsx   # Natural language input
 │
@@ -57,11 +66,14 @@ frontend/
 │   ├── api-client.ts       # Axios instance setup
 │   ├── query-client.tsx    # TanStack Query provider
 │   ├── utils.ts            # cn() utility for classNames
-│   └── tailwind-colors.ts  # Color mapping utilities
+│   ├── tailwind-colors.ts  # Color mapping utilities
+│   ├── tiktok-client.ts    # TikTok API client wrapper
+│   └── tiktok-oauth.ts     # OAuth popup handler
 │
 ├── types/                   # TypeScript definitions
-│   ├── instance.ts         # Instance interfaces
-│   └── task.ts             # Task interfaces
+│   ├── instance.ts         # Instance interfaces  
+│   ├── task.ts             # Task interfaces
+│   └── tiktok.ts           # TikTok OAuth & API types
 │
 └── public/                  # Static assets
 ```
@@ -232,6 +244,14 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ```
 
+For production deployment:
+```env
+NEXT_PUBLIC_API_URL=<your-backend-api-url>
+NEXT_PUBLIC_WS_URL=<your-websocket-url>
+NEXT_PUBLIC_APP_URL=<your-frontend-url>
+NEXT_PUBLIC_TIKTOK_SANDBOX_MODE=true
+```
+
 ### ESLint Configuration
 The project uses ESLint 9 with a flat config (`eslint.config.mjs`):
 - Extends `next/core-web-vitals` for Next.js best practices
@@ -394,7 +414,7 @@ const { data, isLoading } = useQuery({
 
 ---
 
-Last Updated: July 29, 2025
+Last Updated: August 6, 2025
 Next.js Version: 15.4.3
 Tailwind CSS Version: 3.4.0
 ESLint: Version 9 with flat config, fully integrated with builds

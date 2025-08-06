@@ -196,9 +196,11 @@ backend/
 - **Functions**:
   - `get_db()`: Async database session dependency
   - `get_current_user()`: 🔄 DUMMY - Returns mock user for testing
-- **Notes**:
-  - TODO: Implement proper authentication
-  - Currently returns hardcoded test user
+- **Implementation**:
+  - Returns User model with UUID: "00000000-0000-0000-0000-000000000000"
+  - Email: "test@example.com", Name: "Test User"
+  - TODO: Implement proper JWT authentication
+  - Required for instance access control
 
 #### `src/api/routes/health.py`
 - **Purpose**: Health check endpoint with dependency monitoring
@@ -287,13 +289,15 @@ backend/
   - Content posting API (sandbox mode)
   - Encrypted credential storage
   - Support for multiple TikTok accounts per instance
+  - Account naming for easy identification
 - **Main Components**:
   - `oauth.py`: OAuth flow implementation
-    - `generate_auth_url()`: Create authorization URL with state
+    - `generate_auth_url()`: Create authorization URL with state (includes instance_id and optional account_name)
     - `exchange_code_for_token()`: Exchange auth code for tokens
     - `refresh_access_token()`: Refresh expired tokens
     - `get_user_info()`: Fetch TikTok user profile
-    - `save_credentials()`: Store encrypted tokens in database
+    - `save_credentials()`: Store encrypted tokens in database with account name
+    - State format: `instance_id:csrf_token:account_name` (account_name optional)
   - `content_api.py`: Content posting functionality
     - `query_creator_info()`: Get creator permissions and limits
     - `post_video_sandbox()`: Post videos (PULL_FROM_URL or FILE_UPLOAD)
@@ -1188,8 +1192,9 @@ The following components have placeholder/dummy implementations that need to be 
 
 ### Authentication & Authorization
 - **`src/api/deps.py`**: 
-  - `get_current_user()` returns hardcoded test user
+  - `get_current_user()` returns hardcoded test user (UUID: "00000000-0000-0000-0000-000000000000")
   - TODO: Implement JWT-based authentication or OAuth
+  - Used by all protected endpoints (instances, tasks, TikTok)
 
 ### Task Processing
 - **`src/tasks/processors/default_processor.py`**:
@@ -1263,6 +1268,23 @@ The following components have placeholder/dummy implementations that need to be 
    - Advanced error handling and retries
    - Metrics and monitoring
    - ✅ Task Management System (completed)
+
+## Deployment
+
+### Railway Production Deployment
+- **Platform**: Railway.app
+- **URL**: https://swallowtail-production.up.railway.app
+- **Configuration**:
+  - Root directory: `/backend`
+  - Build: Nixpacks with Python 3.11
+  - Start command: `python run.py`
+  - Port binding: Railway's PORT environment variable
+  - Database migrations: Automatic via Alembic
+- **Environment Variables**:
+  - All sensitive credentials stored in Railway dashboard
+  - CORS_ORIGINS configured for production frontend
+  - Redis automatically provisioned
+- **See**: `railway_deployment.md` for detailed setup guide
 
 ## Testing
 
