@@ -7,7 +7,7 @@ import Link from 'next/link'
 // Mock data - will be replaced with API calls
 const mockInstances: Instance[] = [
   {
-    id: '1',
+    id: '550e8400-e29b-41d4-a716-446655440000',
     name: 'TechGadgets Store',
     description: 'Electronics and gadgets ecommerce store',
     type: InstanceType.ECOMMERCE,
@@ -29,7 +29,7 @@ const mockInstances: Instance[] = [
     is_active: true,
   },
   {
-    id: '2',
+    id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
     name: 'Fashion Boutique',
     description: 'Trendy clothing and accessories',
     type: InstanceType.ECOMMERCE,
@@ -50,7 +50,7 @@ const mockInstances: Instance[] = [
     is_active: true,
   },
   {
-    id: '3',
+    id: '6ba7b814-9dad-11d1-80b4-00c04fd430c8',
     name: 'Lifestyle Blog',
     description: 'Health, wellness, and lifestyle content',
     type: InstanceType.SOCIAL_MEDIA,
@@ -75,9 +75,9 @@ const mockInstances: Instance[] = [
 
 // Mock metrics
 const mockMetrics: Record<string, { activeTasks: number; completedToday: number; activeAgents: number }> = {
-  '1': { activeTasks: 3, completedToday: 12, activeAgents: 6 },
-  '2': { activeTasks: 1, completedToday: 8, activeAgents: 5 },
-  '3': { activeTasks: 0, completedToday: 0, activeAgents: 4 },
+  '550e8400-e29b-41d4-a716-446655440000': { activeTasks: 3, completedToday: 12, activeAgents: 6 },
+  '6ba7b810-9dad-11d1-80b4-00c04fd430c8': { activeTasks: 1, completedToday: 8, activeAgents: 5 },
+  '6ba7b814-9dad-11d1-80b4-00c04fd430c8': { activeTasks: 0, completedToday: 0, activeAgents: 4 },
 }
 
 export default function InstancesPage() {

@@ -78,7 +78,8 @@ backend/
   - Type-safe configuration with validation
   - Settings for OpenAI, Redis, API server, and external services
   - Caching with `@lru_cache` for performance
-- **Key Settings**: `openai_api_key`, `redis_url`, `api_host/port`, `cors_origins`
+  - Flexible CORS origins parsing (supports JSON array or comma-separated string)
+- **Key Settings**: `openai_api_key`, `redis_url`, `api_host/port`, `cors_origins_list` (property)
 
 #### `src/core/state.py`
 - **Purpose**: Shared state management for agent coordination
@@ -131,6 +132,16 @@ backend/
   - `CheckpointStatus`: Current state (pending, approved, rejected)
 - **Methods**: `approve()`, `reject()`, `request_revision()`
 
+#### `src/models/user.py` (NEW)
+- **Purpose**: Simple user model for MVP authentication
+- **Model**: `User`
+  - Basic fields: id (UUID), email, name, is_active, created_at, updated_at
+  - Relationship: One-to-many with instances
+- **Notes**: 
+  - Minimal implementation for MVP
+  - No password storage (future OAuth integration planned)
+  - Foreign key relationship with Instance model
+
 ### Agent System
 
 #### `src/agents/base.py`
@@ -174,10 +185,20 @@ backend/
 #### `src/api/main.py`
 - **Purpose**: FastAPI application setup
 - **Features**:
-  - CORS middleware configuration
+  - CORS middleware configuration (uses `cors_origins_list` property)
   - Router registration
   - Debug mode with auto-docs
   - API versioning setup
+  - Socket.io integration for WebSocket support
+
+#### `src/api/deps.py` (NEW)
+- **Purpose**: Common dependencies for API routes
+- **Functions**:
+  - `get_db()`: Async database session dependency
+  - `get_current_user()`: 🔄 DUMMY - Returns mock user for testing
+- **Notes**:
+  - TODO: Implement proper authentication
+  - Currently returns hardcoded test user
 
 #### `src/api/routes/health.py`
 - **Purpose**: Health check endpoint with dependency monitoring
@@ -352,6 +373,10 @@ backend/
 #### Database Migrations
 - **Tool**: Alembic for schema version control
 - **Configuration**: `alembic/env.py` configured for async operations
+- **Latest Migration**: `18815335c350_add_user_table_and_instance_fk`
+  - Creates users table with basic fields
+  - Adds foreign key from instances to users
+  - Creates default user for existing data
 - **Commands**:
   ```bash
   # Create new migration
@@ -444,8 +469,9 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 - Includes Celery and task queue dependencies
 
 #### `requirements.txt`
-- Quick setup dependencies for pip users
+- Auto-generated from Poetry for deployment
 - Core packages: crewai, langchain, fastapi, redis
+- Used by Railway/Docker deployments
 
 #### `.env.example`
 - Template for environment variables
@@ -454,6 +480,27 @@ celery -A src.core.celery_app:celery_app worker --loglevel=info
 - Pinecone settings for vector database
 - Supabase database connection strings
 - Service authentication keys
+
+## Deployment Configuration
+
+#### `railway.json`
+- Railway platform configuration
+- Uses Nixpacks builder
+- Start command: `python run.py`
+- Configured for automatic restarts
+
+#### `Procfile`
+- Web process definition for Railway
+- Command: `web: python run.py`
+
+#### `runtime.txt`
+- Python version specification: `python-3.12`
+- Used by Railway for runtime selection
+
+#### Port Configuration
+- Application binds to `0.0.0.0` (all interfaces)
+- Uses `PORT` environment variable if available (Railway requirement)
+- Falls back to configured `api_port` for local development
 
 ## Current Capabilities
 
@@ -1135,9 +1182,60 @@ The task queue system provides scalable background task processing using Celery 
   - Processes scheduled tasks every 5 minutes
   - Automatic retry on failure
 
+## Dummy Implementations
+
+The following components have placeholder/dummy implementations that need to be replaced:
+
+### Authentication & Authorization
+- **`src/api/deps.py`**: 
+  - `get_current_user()` returns hardcoded test user
+  - TODO: Implement JWT-based authentication or OAuth
+
+### Task Processing
+- **`src/tasks/processors/default_processor.py`**:
+  - Simulates processing with 2-second delay
+  - TODO: Integrate with Manager Agent for real task execution
+  
+- **`src/tasks/processors/content_creation_processor.py`**:
+  - Returns mock social media content
+  - TODO: Integrate with real content creation agents and image/video generation
+
+### Agent Implementations
+- **`src/agents/market_research.py`**:
+  - Returns hardcoded market data
+  - TODO: Integrate with market research APIs and web scraping
+  
+- **`src/agents/content_writer.py`**:
+  - Returns template-based content
+  - TODO: Integrate with GPT-4 for content generation
+  
+- **`src/agents/pricing_analyst.py`**:
+  - Returns random pricing suggestions
+  - TODO: Implement real pricing analysis with competitor data
+  
+- **`src/agents/seo_specialist.py`**:
+  - Returns generic SEO tips
+  - TODO: Integrate with SEO tools and keyword research
+
+### Intent Parsing
+- **`src/tasks/queue_service.py`**:
+  - Basic keyword matching for intent detection
+  - TODO: Integrate NLP/LLM for sophisticated intent parsing
+
+### Async Image Generation
+- **`src/api/routes/image_generation.py`**:
+  - `/api/v1/images/generate-async` returns placeholder response
+  - TODO: Implement queue-based async image generation
+
 ## Next Steps
 
-1. **Research Workshop Implementation**:
+1. **Authentication Implementation**:
+   - JWT token generation and validation
+   - OAuth integration (Google, GitHub)
+   - User registration and login endpoints
+   - Protected route middleware
+
+2. **Research Workshop Implementation**:
    - ResearchWorkshop orchestrator with continuous discovery cycle
    - TrendScannerAgent implementation
    - MarketAnalyzerAgent implementation
