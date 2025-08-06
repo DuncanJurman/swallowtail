@@ -39,7 +39,7 @@ const stats = [
 const recentActivity = [
   {
     id: 1,
-    instance: 'TechGadgets Store',
+    instance: 'Test Fashion Store',
     task: 'Generated product descriptions for 5 items',
     time: '2 hours ago',
     status: 'completed',

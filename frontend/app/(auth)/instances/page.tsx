@@ -7,8 +7,8 @@ import Link from 'next/link'
 // Mock data - will be replaced with API calls
 const mockInstances: Instance[] = [
   {
-    id: '550e8400-e29b-41d4-a716-446655440000',
-    name: 'TechGadgets Store',
+    id: 'ed047e11-67e0-40e7-8097-1251d4e7c6ab',
+    name: 'Test Fashion Store',
     description: 'Electronics and gadgets ecommerce store',
     type: InstanceType.ECOMMERCE,
     business_profile: {
@@ -75,7 +75,7 @@ const mockInstances: Instance[] = [
 
 // Mock metrics
 const mockMetrics: Record<string, { activeTasks: number; completedToday: number; activeAgents: number }> = {
-  '550e8400-e29b-41d4-a716-446655440000': { activeTasks: 3, completedToday: 12, activeAgents: 6 },
+  'ed047e11-67e0-40e7-8097-1251d4e7c6ab': { activeTasks: 3, completedToday: 12, activeAgents: 6 },
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8': { activeTasks: 1, completedToday: 8, activeAgents: 5 },
   '6ba7b814-9dad-11d1-80b4-00c04fd430c8': { activeTasks: 0, completedToday: 0, activeAgents: 4 },
 }

@@ -293,9 +293,10 @@ backend/
   - OAuth 2.0 flow with CSRF protection
   - Token management with automatic refresh
   - Content posting API (sandbox mode)
-  - Encrypted credential storage
+  - Encrypted credential storage using Fernet encryption
   - Support for multiple TikTok accounts per instance
   - Account naming for easy identification
+  - Timezone-aware datetime handling for token expiration
 - **Main Components**:
   - `oauth.py`: OAuth flow implementation
     - `generate_auth_url()`: Create authorization URL with state (includes instance_id and optional account_name)
@@ -304,6 +305,7 @@ backend/
     - `get_user_info()`: Fetch TikTok user profile
     - `save_credentials()`: Store encrypted tokens in database with account name
     - State format: `instance_id:csrf_token:account_name` (account_name optional)
+    - Uses `datetime.now(timezone.utc)` for timezone-aware timestamps
     - Note: Uses re-query instead of `db.refresh()` for pgbouncer transaction pooling compatibility
   - `content_api.py`: Content posting functionality
     - `query_creator_info()`: Get creator permissions and limits
@@ -316,21 +318,24 @@ backend/
   - `TIKTOK_CLIENT_SECRET`: TikTok app client secret
   - `TIKTOK_REDIRECT_URI`: OAuth callback URL
   - `TIKTOK_SANDBOX_MODE`: Enable sandbox mode (default: true)
+  - `ENCRYPTION_KEY`: Fernet key for token encryption (32 url-safe base64-encoded bytes)
 
 #### `src/models/tiktok_credentials.py`
 - **Purpose**: Database model for storing TikTok OAuth credentials
 - **Key Features**:
-  - Encrypted storage of access and refresh tokens
-  - Automatic token expiration checking
+  - Encrypted storage of access and refresh tokens using Fernet
+  - Automatic token expiration checking with timezone-aware datetime
   - Support for multiple TikTok accounts per instance
   - Optional account naming for easy identification
   - Token refresh tracking
+  - All DateTime columns use `DateTime(timezone=True)` for proper timezone support
 - **Model**: `InstanceTikTokCredentials`
   - Links to Instance via foreign key (no unique constraint - allows multiple accounts)
   - Stores TikTok user info and granted scopes
-  - Tracks token expiration times
-  - Provides encryption/decryption properties
+  - Tracks token expiration times with timezone-aware timestamps
+  - Provides encryption/decryption properties with automatic key validation
   - Fields: id, instance_id, account_name, tiktok_open_id, display_name, avatar_url, access_token (encrypted), refresh_token (encrypted), scopes, user_info (JSONB)
+  - Timestamps: created_at, updated_at, last_used_at (all timezone-aware)
 
 #### `src/api/routes/tiktok.py`
 - **Purpose**: REST API endpoints for TikTok integration
@@ -404,23 +409,32 @@ backend/
 - **Environment Variables**:
   - `DATABASE_URL`: Transaction pooler connection (port 6543) - Used for application queries
   - `DATABASE_SESSION_POOLER_URL`: Session pooler connection (port 5432 on pooler domain) - Used for migrations
+  - `ENCRYPTION_KEY`: Fernet encryption key for OAuth tokens (generate with `Fernet.generate_key()`)
   - `SUPABASE_URL`: Supabase project URL
   - `SUPABASE_ANON_KEY`: Public API key
   - `SUPABASE_SERVICE_KEY`: Service role key for backend
 
-#### Railway IPv6 & PgBouncer Connection Solution
+#### Railway IPv6 & PgBouncer Connection Solution (August 2025)
 - **Issues Resolved**: 
   1. `psycopg2.OperationalError: Network is unreachable` - Railway doesn't support IPv6
   2. `DuplicatePreparedStatementError` when using SQLAlchemy + asyncpg with PgBouncer
+  3. `invalid input for query argument $1: datetime.datetime` - Timezone-aware datetime insertion errors
 - **Root Causes**:
   - Supabase direct connections use IPv6 which Railway doesn't support
   - PgBouncer in transaction pooling mode doesn't support prepared statements
-- **Solution Implemented** (`src/core/database.py`):
-  - Always use Supabase pooler connections (IPv4 compatible)
-  - Transaction pooler (port 6543) for application queries
-  - Session pooler (port 5432 on pooler domain) for migrations
-  - Set `statement_cache_size=0` to disable prepared statement caching
-  - Generate unique statement names using UUID to avoid conflicts
+  - Database DateTime columns were timezone-naive but code used timezone-aware datetime objects
+- **Solution Implemented**:
+  1. **Connection Configuration** (`src/core/database.py`):
+     - Always use Supabase pooler connections (IPv4 compatible)
+     - Transaction pooler (port 6543) for application queries
+     - Session pooler (port 5432 on pooler domain) for migrations
+     - Set `statement_cache_size=0` to disable prepared statement caching
+     - Generate unique statement names using UUID to avoid conflicts
+  2. **Timezone Support** (Models & Migration):
+     - Updated all DateTime columns to `DateTime(timezone=True)`
+     - Replaced `datetime.utcnow()` with `datetime.now(timezone.utc)`
+     - Created migration `fix_timezone_tiktok` to alter columns to TIMESTAMP WITH TIME ZONE
+     - Fixed models: `tiktok_credentials.py`, `user.py`, `oauth.py`, `tiktok.py`
 - **Key Configuration**:
   ```python
   # Always use transaction pooler for IPv4 compatibility
@@ -429,6 +443,9 @@ backend/
       "statement_cache_size": 0,  # Critical for PgBouncer
       "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",  # Unique names
   }
+  
+  # DateTime columns with timezone support
+  created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
   ```
 
 #### Testing Database Setup
