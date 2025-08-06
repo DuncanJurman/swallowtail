@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.api.deps import get_current_user, get_db
 from src.models.user import User
@@ -165,8 +165,8 @@ async def get_accounts(
                     # Update credentials
                     credentials.access_token = token_response.access_token
                     credentials.refresh_token = token_response.refresh_token
-                    credentials.access_token_expires_at = datetime.utcnow() + timedelta(seconds=token_response.expires_in)
-                    credentials.refresh_token_expires_at = datetime.utcnow() + timedelta(seconds=token_response.refresh_expires_in)
+                    credentials.access_token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_response.expires_in)
+                    credentials.refresh_token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_response.refresh_expires_in)
                     
                     await db.commit()
             except Exception:

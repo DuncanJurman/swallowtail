@@ -2,7 +2,7 @@
 import secrets
 import hashlib
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 import httpx
 from fastapi import HTTPException
@@ -277,7 +277,7 @@ class TikTokOAuthService:
         from uuid import UUID
         
         # Calculate token expiration times
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         access_token_expires_at = now + timedelta(seconds=token_response.expires_in)
         refresh_token_expires_at = now + timedelta(seconds=token_response.refresh_expires_in)
         
