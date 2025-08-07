@@ -1,5 +1,6 @@
-# Swallowtail Frontend Implementation Guide
+# Swallow
 
+Deployed at: skipper-ecom.com
 ## 🎯 Overview
 Swallowtail is an AI-powered business management platform that enables users to manage multiple businesses (instances) through natural language commands. The frontend is built with Next.js 15, TypeScript, and Tailwind CSS v4, providing a modern, responsive interface for interacting with AI agents.
 

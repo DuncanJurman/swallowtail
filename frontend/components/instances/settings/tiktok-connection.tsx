@@ -77,12 +77,14 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
   }
 
   const handleConfirmConnect = async () => {
+    console.log('[TikTokConnection] Starting OAuth connection')
     // Don't close the dialog yet - keep it open during OAuth flow
     setIsConnecting(true)
     setError(null)
 
     // Set a timeout to reset state if OAuth takes too long
     const timeoutId = setTimeout(() => {
+      console.log('[TikTokConnection] OAuth timeout - resetting state')
       setIsConnecting(false)
       setError('Connection timeout. Please try again.')
     }, 60000) // 60 seconds timeout
@@ -91,12 +93,17 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
       instanceId,
       accountName: accountName.trim() || undefined,
       onSuccess: (data: TikTokCallbackSuccess) => {
+        console.log('[TikTokConnection] OAuth success callback triggered', data)
         clearTimeout(timeoutId)
+        
         // Close dialog and reset everything on success
         setShowAddAccountDialog(false)
         setIsConnecting(false)
         setAccountName('')
         setError(null)
+        
+        console.log('[TikTokConnection] Dialog should be closed now, refreshing accounts')
+        
         // Refresh accounts list with a small delay to ensure backend has processed
         setTimeout(() => {
           fetchAccounts()
@@ -104,17 +111,21 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
         // Could add a success toast here
       },
       onError: (error: TikTokCallbackError) => {
+        console.log('[TikTokConnection] OAuth error callback triggered', error)
         clearTimeout(timeoutId)
+        
         // Reset connecting state
         setIsConnecting(false)
         
         // If the user just closed the popup, close the dialog too
         if (error.error === 'popup_closed') {
+          console.log('[TikTokConnection] User closed popup, closing dialog')
           setShowAddAccountDialog(false)
           setAccountName('')
           setError(null)
         } else {
           // For other errors, show the error message in the dialog
+          console.log('[TikTokConnection] Showing error in dialog')
           setError(error.error_description || 'Failed to connect TikTok account')
         }
       }
@@ -341,15 +352,19 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
 
       {/* Add Account Dialog */}
       <Dialog open={showAddAccountDialog} onOpenChange={(open) => {
-        // Allow closing unless actively connecting
-        if (!isConnecting || !open) {
-          setShowAddAccountDialog(open)
-          // Reset form when closing
-          if (!open) {
-            setAccountName('')
-            setError(null)
-            setIsConnecting(false)
-          }
+        console.log('[TikTokConnection] Dialog onOpenChange:', open, 'isConnecting:', isConnecting)
+        
+        // Always allow closing (user should have control)
+        if (!open) {
+          // Force close and reset everything
+          console.log('[TikTokConnection] Dialog closing - resetting all states')
+          setShowAddAccountDialog(false)
+          setIsConnecting(false)
+          setAccountName('')
+          setError(null)
+        } else {
+          // Opening dialog
+          setShowAddAccountDialog(true)
         }
       }}>
         <DialogContent>
@@ -384,8 +399,15 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
           <DialogFooter>
             <Button 
               variant="outline" 
-              onClick={() => setShowAddAccountDialog(false)}
-              disabled={isConnecting}
+              onClick={() => {
+                console.log('[TikTokConnection] Cancel button clicked')
+                // Force close dialog and reset everything
+                setShowAddAccountDialog(false)
+                setIsConnecting(false)
+                setAccountName('')
+                setError(null)
+              }}
+              // Never disable cancel button - user should always be able to cancel
             >
               Cancel
             </Button>
