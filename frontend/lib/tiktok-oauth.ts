@@ -54,13 +54,18 @@ export class TikTokOAuth {
 
       // Set up message listener for callback
       this.messageListener = (event: MessageEvent) => {
+        console.log('[TikTokOAuth] Message received from origin:', event.origin, 'Type:', event.data?.type)
+        
         // Verify origin
         const allowedOrigins = [
           process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001',
           'https://skipper-ecom.com'
         ]
+        
+        console.log('[TikTokOAuth] Allowed origins:', allowedOrigins)
 
         if (!allowedOrigins.includes(event.origin)) {
+          console.warn('[TikTokOAuth] Origin not allowed:', event.origin)
           return
         }
 
@@ -71,6 +76,7 @@ export class TikTokOAuth {
 
         // Handle callback message
         if (event.data.type === 'tiktok-callback-success') {
+          console.log('[TikTokOAuth] Success message received, calling callback')
           this.isProcessingCallback = true
           this.callbackProcessed = true
           
@@ -78,18 +84,23 @@ export class TikTokOAuth {
           this.cleanup()
           
           if (onSuccess) {
+            console.log('[TikTokOAuth] Calling onSuccess callback')
             onSuccess(event.data.payload as TikTokCallbackSuccess)
+            console.log('[TikTokOAuth] onSuccess callback completed')
           }
         } else if (event.data.type === 'tiktok-callback-error') {
+          console.log('[TikTokOAuth] Error message received, calling callback')
           this.isProcessingCallback = true
           this.callbackProcessed = true
           
           this.cleanup()
           
           if (onError) {
+            console.log('[TikTokOAuth] Calling onError callback')
             onError(event.data.payload as TikTokCallbackError)
           }
         } else if (event.data.type === 'tiktok-callback-close') {
+          console.log('[TikTokOAuth] Close message received')
           // Handle explicit close request from callback page
           this.cleanup()
         }

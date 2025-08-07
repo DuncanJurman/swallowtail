@@ -38,6 +38,7 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
   const [showAddAccountDialog, setShowAddAccountDialog] = useState(false)
   const [accountName, setAccountName] = useState('')
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
+  const [dialogKey, setDialogKey] = useState(0)
   
   // Use ref to avoid stale closures in callbacks
   const dialogStateRef = useRef({
@@ -52,6 +53,15 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
       isConnecting
     }
   }, [showAddAccountDialog, isConnecting])
+
+  // Debug: Monitor dialog state changes
+  useEffect(() => {
+    console.log('[TikTokConnection] Dialog state changed:', {
+      showAddAccountDialog,
+      isConnecting,
+      error
+    })
+  }, [showAddAccountDialog, isConnecting, error])
 
   // Fetch TikTok accounts
   const fetchAccounts = useCallback(async () => {
@@ -80,6 +90,7 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
   }
 
   const handleConfirmConnect = async () => {
+    console.log('[TikTokConnection] Starting OAuth flow')
     setIsConnecting(true)
     setError(null)
 
@@ -87,25 +98,70 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
       instanceId,
       accountName: accountName.trim() || undefined,
       onSuccess: (data: TikTokCallbackSuccess) => {
+        console.log('[TikTokConnection] Success callback triggered, current state:', {
+          showAddAccountDialog,
+          isConnecting
+        })
+        
         // Use functional state updates to avoid stale closures
-        setShowAddAccountDialog(() => false)
-        setIsConnecting(() => false)
+        setShowAddAccountDialog((prev) => {
+          console.log('[TikTokConnection] Setting showAddAccountDialog from', prev, 'to false')
+          return false
+        })
+        setIsConnecting((prev) => {
+          console.log('[TikTokConnection] Setting isConnecting from', prev, 'to false')
+          return false
+        })
         setAccountName(() => '')
         setError(() => null)
         
+        console.log('[TikTokConnection] State updates called, refreshing accounts')
         // Refresh accounts list
         fetchAccounts()
+        
+        // Fallback: If dialog doesn't close after state updates, force it
+        setTimeout(() => {
+          console.log('[TikTokConnection] Checking if dialog closed, current state:', dialogStateRef.current)
+          if (dialogStateRef.current.showAddAccountDialog) {
+            console.log('[TikTokConnection] Dialog still open after state updates, forcing close')
+            
+            // Force re-render by changing key
+            setDialogKey(prev => prev + 1)
+            
+            // Try pressing Escape key to close the dialog
+            const escapeEvent = new KeyboardEvent('keydown', {
+              key: 'Escape',
+              code: 'Escape',
+              keyCode: 27,
+              bubbles: true
+            })
+            document.dispatchEvent(escapeEvent)
+            
+            // If that doesn't work, try clicking the overlay
+            setTimeout(() => {
+              const overlay = document.querySelector('[data-radix-dialog-overlay]') as HTMLElement
+              if (overlay) {
+                console.log('[TikTokConnection] Clicking overlay to force close')
+                overlay.click()
+              }
+            }, 100)
+          }
+        }, 500)
       },
       onError: (error: TikTokCallbackError) => {
+        console.log('[TikTokConnection] Error callback triggered:', error)
+        
         // Use functional state updates
         setIsConnecting(() => false)
         
         if (error.error === 'popup_closed') {
+          console.log('[TikTokConnection] Popup closed, closing dialog')
           // User closed popup, close dialog
           setShowAddAccountDialog(() => false)
           setAccountName(() => '')
           setError(() => null)
         } else {
+          console.log('[TikTokConnection] Showing error in dialog')
           // Show error in dialog
           setError(() => error.error_description || 'Failed to connect TikTok account')
         }
@@ -333,6 +389,7 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
 
       {/* Add Account Dialog */}
       <Dialog 
+        key={dialogKey}
         open={showAddAccountDialog} 
         onOpenChange={setShowAddAccountDialog}>
         <DialogContent>
