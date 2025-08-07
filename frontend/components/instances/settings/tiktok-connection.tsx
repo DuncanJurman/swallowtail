@@ -57,7 +57,22 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
     fetchAccounts()
   }, [fetchAccounts])
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Reset states when component unmounts
+      setShowAddAccountDialog(false)
+      setIsConnecting(false)
+      setError(null)
+      setAccountName('')
+    }
+  }, [])
+
   const handleConnect = () => {
+    // Reset any previous state before opening dialog
+    setError(null)
+    setAccountName('')
+    setIsConnecting(false)
     setShowAddAccountDialog(true)
   }
 
@@ -66,22 +81,42 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
     setIsConnecting(true)
     setError(null)
 
+    // Set a timeout to reset state if OAuth takes too long
+    const timeoutId = setTimeout(() => {
+      setIsConnecting(false)
+      setError('Connection timeout. Please try again.')
+    }, 60000) // 60 seconds timeout
+
     await TikTokOAuth.initiateConnection({
       instanceId,
       accountName: accountName.trim() || undefined,
       onSuccess: (data: TikTokCallbackSuccess) => {
-        // Close dialog only on success
+        clearTimeout(timeoutId)
+        // Close dialog and reset everything on success
         setShowAddAccountDialog(false)
         setIsConnecting(false)
         setAccountName('')
-        // Refresh accounts list
-        fetchAccounts()
+        setError(null)
+        // Refresh accounts list with a small delay to ensure backend has processed
+        setTimeout(() => {
+          fetchAccounts()
+        }, 500)
         // Could add a success toast here
       },
       onError: (error: TikTokCallbackError) => {
-        // Keep dialog open on error to show the error message
+        clearTimeout(timeoutId)
+        // Reset connecting state
         setIsConnecting(false)
-        setError(error.error_description || 'Failed to connect TikTok account')
+        
+        // If the user just closed the popup, close the dialog too
+        if (error.error === 'popup_closed') {
+          setShowAddAccountDialog(false)
+          setAccountName('')
+          setError(null)
+        } else {
+          // For other errors, show the error message in the dialog
+          setError(error.error_description || 'Failed to connect TikTok account')
+        }
       }
     })
   }
@@ -306,13 +341,14 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
 
       {/* Add Account Dialog */}
       <Dialog open={showAddAccountDialog} onOpenChange={(open) => {
-        // Only allow closing if not currently connecting
-        if (!isConnecting) {
+        // Allow closing unless actively connecting
+        if (!isConnecting || !open) {
           setShowAddAccountDialog(open)
+          // Reset form when closing
           if (!open) {
-            // Reset form when closing
             setAccountName('')
             setError(null)
+            setIsConnecting(false)
           }
         }
       }}>
