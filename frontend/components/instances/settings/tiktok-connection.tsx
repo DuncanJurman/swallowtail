@@ -62,7 +62,7 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
   }
 
   const handleConfirmConnect = async () => {
-    setShowAddAccountDialog(false)
+    // Don't close the dialog yet - keep it open during OAuth flow
     setIsConnecting(true)
     setError(null)
 
@@ -70,6 +70,8 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
       instanceId,
       accountName: accountName.trim() || undefined,
       onSuccess: (data: TikTokCallbackSuccess) => {
+        // Close dialog only on success
+        setShowAddAccountDialog(false)
         setIsConnecting(false)
         setAccountName('')
         // Refresh accounts list
@@ -77,6 +79,7 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
         // Could add a success toast here
       },
       onError: (error: TikTokCallbackError) => {
+        // Keep dialog open on error to show the error message
         setIsConnecting(false)
         setError(error.error_description || 'Failed to connect TikTok account')
       }
@@ -302,21 +305,40 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
       </Card>
 
       {/* Add Account Dialog */}
-      <Dialog open={showAddAccountDialog} onOpenChange={setShowAddAccountDialog}>
+      <Dialog open={showAddAccountDialog} onOpenChange={(open) => {
+        // Only allow closing if not currently connecting
+        if (!isConnecting) {
+          setShowAddAccountDialog(open)
+          if (!open) {
+            // Reset form when closing
+            setAccountName('')
+            setError(null)
+          }
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Connect TikTok Account</DialogTitle>
             <DialogDescription>
-              Add a friendly name to help identify this account (optional)
+              {isConnecting 
+                ? 'Connecting to TikTok... Please complete the authorization in the popup window.'
+                : 'Add a friendly name to help identify this account (optional)'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {error && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Account Name</label>
               <Input
                 placeholder="e.g., Main Business Account"
                 value={accountName}
                 onChange={(e) => setAccountName(e.target.value)}
+                disabled={isConnecting}
               />
               <p className="text-xs text-muted-foreground">
                 This name is only for your reference and won&apos;t be shown publicly
@@ -324,11 +346,25 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddAccountDialog(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowAddAccountDialog(false)}
+              disabled={isConnecting}
+            >
               Cancel
             </Button>
-            <Button onClick={handleConfirmConnect}>
-              Continue to TikTok
+            <Button 
+              onClick={handleConfirmConnect}
+              disabled={isConnecting}
+            >
+              {isConnecting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                'Continue to TikTok'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
