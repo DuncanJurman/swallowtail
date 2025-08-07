@@ -56,7 +56,6 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
   
   // Centralized dialog close handler
   const closeDialog = useCallback(() => {
-    console.log('[TikTokConnection] closeDialog called')
     // Use setTimeout to ensure state updates happen in next tick
     setTimeout(() => {
       setShowAddAccountDialog(false)
@@ -67,15 +66,6 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
       setDialogKey(prev => prev + 1)
     }, 0)
   }, [])
-
-  // Debug: Monitor dialog state changes
-  useEffect(() => {
-    console.log('[TikTokConnection] Dialog state changed:', {
-      showAddAccountDialog,
-      isConnecting,
-      error
-    })
-  }, [showAddAccountDialog, isConnecting, error])
 
   // Fetch TikTok accounts
   const fetchAccounts = useCallback(async () => {
@@ -104,7 +94,6 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
   }
 
   const handleConfirmConnect = async () => {
-    console.log('[TikTokConnection] Starting OAuth flow')
     setIsConnecting(true)
     setError(null)
 
@@ -112,24 +101,16 @@ export function TikTokConnection({ instanceId }: TikTokConnectionProps) {
       instanceId,
       accountName: accountName.trim() || undefined,
       onSuccess: (data: TikTokCallbackSuccess) => {
-        console.log('[TikTokConnection] Success callback triggered')
-        
         // Close dialog using centralized handler
         closeDialog()
-        
-        console.log('[TikTokConnection] Refreshing accounts')
         // Refresh accounts list
         fetchAccounts()
       },
       onError: (error: TikTokCallbackError) => {
-        console.log('[TikTokConnection] Error callback triggered:', error)
-        
         if (error.error === 'popup_closed') {
-          console.log('[TikTokConnection] Popup closed, closing dialog')
           // User closed popup, close dialog
           closeDialog()
         } else {
-          console.log('[TikTokConnection] Showing error in dialog')
           // Show error in dialog but keep dialog open
           setIsConnecting(false)
           setError(error.error_description || 'Failed to connect TikTok account')

@@ -344,6 +344,17 @@ const { data, isLoading } = useQuery({
 
 ## 📋 Recent Updates
 
+### August 7, 2025 - TikTok OAuth Dialog Fix
+- **Fixed Radix UI Dialog Not Closing Issue**:
+  - Problem: Dialog component wasn't closing after OAuth success despite state being updated to `false`
+  - Root cause: State updates from OAuth message event listeners weren't triggering proper React re-renders
+  - Solution: Created centralized `closeDialog` function that:
+    - Uses `setTimeout(0)` to ensure state updates happen in next tick
+    - Increments a `dialogKey` to force Dialog component to unmount/remount
+    - Ensures all dialog state is properly cleaned up
+  - Applied fix to all dialog close scenarios (success, error, cancel)
+  - This resolved the issue where the TikTok OAuth dialog would remain visible after successful authentication
+
 ### July 31, 2025 - TikTok OAuth Integration (Phase 2)
 - **OAuth Flow Implementation**:
   - Created TikTok API client (`/lib/tiktok-client.ts`) with account management
@@ -415,7 +426,7 @@ const { data, isLoading } = useQuery({
 
 ---
 
-Last Updated: August 6, 2025
+Last Updated: August 7, 2025
 Next.js Version: 15.4.3
 Tailwind CSS Version: 3.4.0
 ESLint: Version 9 with flat config, fully integrated with builds

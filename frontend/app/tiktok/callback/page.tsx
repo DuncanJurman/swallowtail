@@ -77,7 +77,7 @@ function TikTokCallbackContent() {
               try {
                 window.close()
               } catch (e) {
-                console.log('Could not close window automatically')
+                // Could not close window automatically
               }
             }, 1500) // Give user a moment to see success message
           }
