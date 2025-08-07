@@ -71,6 +71,15 @@ function TikTokCallbackContent() {
               },
               window.location.origin
             )
+            
+            // Try to close immediately after success
+            setTimeout(() => {
+              try {
+                window.close()
+              } catch (e) {
+                console.log('Could not close window automatically')
+              }
+            }, 1500) // Give user a moment to see success message
           }
         } else {
           throw new Error(data.detail || 'Failed to complete connection')
@@ -106,7 +115,19 @@ function TikTokCallbackContent() {
           if (prev <= 1) {
             // Close window or redirect
             if (window.opener) {
-              window.close()
+              // Try to close the window
+              try {
+                window.close()
+              } catch (e) {
+                // If close fails, notify parent and let it handle cleanup
+                window.opener.postMessage(
+                  {
+                    type: 'tiktok-callback-close',
+                    payload: {}
+                  },
+                  window.location.origin
+                )
+              }
             } else {
               // If not in popup, redirect to instances page
               window.location.href = '/instances'

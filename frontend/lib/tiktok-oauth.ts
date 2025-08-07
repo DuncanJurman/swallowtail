@@ -11,6 +11,7 @@ export interface TikTokOAuthOptions {
 export class TikTokOAuth {
   private static popup: Window | null = null
   private static messageListener: ((event: MessageEvent) => void) | null = null
+  private static checkInterval: NodeJS.Timeout | null = null
 
   static async initiateConnection({
     instanceId,
@@ -68,15 +69,17 @@ export class TikTokOAuth {
           if (onError) {
             onError(event.data.payload as TikTokCallbackError)
           }
+        } else if (event.data.type === 'tiktok-callback-close') {
+          // Handle explicit close request from callback page
+          this.cleanup()
         }
       }
 
       window.addEventListener('message', this.messageListener)
 
       // Check if popup was closed manually
-      const checkInterval = setInterval(() => {
+      this.checkInterval = setInterval(() => {
         if (this.popup && this.popup.closed) {
-          clearInterval(checkInterval)
           this.cleanup()
           if (onError) {
             onError({
@@ -99,6 +102,12 @@ export class TikTokOAuth {
   }
 
   private static cleanup(): void {
+    // Clear the interval first
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval)
+      this.checkInterval = null
+    }
+
     if (this.popup && !this.popup.closed) {
       this.popup.close()
     }
