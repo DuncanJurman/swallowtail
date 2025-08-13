@@ -344,6 +344,30 @@ const { data, isLoading } = useQuery({
 
 ## 📋 Recent Updates
 
+### August 13, 2025 - TikTok Content Posting Integration (Phase 1)
+- **Task Detail Page Enhancement** (`/app/(auth)/instances/[id]/tasks/[taskId]/`):
+  - Implemented three-section layout using Tabs component
+  - **Planning Section**: Displays todo-style execution plan with checkboxes and reference images
+  - **Agent Execution Logs Section**: Shows agent activity with timestamps and badges (placeholder data)
+  - **Final Output Section**: Video player with metadata, captions, and TikTok posting checkbox
+- **TikTok Posting Dialog** (`/components/tasks/tiktok-post-dialog.tsx`):
+  - Full-featured posting interface with video preview
+  - Editable caption with character counter (2200 max)
+  - Privacy level selector (Sandbox mode defaults to SELF_ONLY)
+  - Interaction settings (disable duet/stitch/comments)
+  - Account selector for multi-account support
+  - Sandbox mode warning banner
+- **API Hooks** (`/lib/hooks/use-tiktok-post.ts`):
+  - `usePostToTikTok`: Mutation hook for posting videos
+  - `useTikTokPostStatus`: Query hook for checking post status with auto-polling
+  - `useTaskDetail`: Query hook for fetching task details with planning and logs
+  - `useTikTokAccounts`: Query hook for fetching instance TikTok accounts
+- **New UI Components**:
+  - Label component (`/components/ui/label.tsx`) using Radix UI
+  - Select component (`/components/ui/select.tsx`) with dropdown functionality
+  - Toast hook (`/components/ui/use-toast.tsx`) for notifications
+- **Type Safety**: Complete TypeScript interfaces for all TikTok posting data structures
+
 ### August 7, 2025 - TikTok OAuth Dialog Fix
 - **Fixed Radix UI Dialog Not Closing Issue**:
   - Problem: Dialog component wasn't closing after OAuth success despite state being updated to `false`

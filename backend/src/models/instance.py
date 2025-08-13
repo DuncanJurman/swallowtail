@@ -126,6 +126,13 @@ class InstanceTask(Base):
     result_data = Column(JSONB, nullable=True)  # Legacy field - will be deprecated
     error_message = Column(Text, nullable=True)
     
+    # TikTok Posting Fields
+    tiktok_post_data = Column(JSONB, nullable=True)  # Metadata for TikTok post
+    tiktok_publish_id = Column(String(255), nullable=True)  # TikTok's publish ID
+    tiktok_post_status = Column(String(50), nullable=True)  # PENDING, PROCESSING, PUBLISHED, FAILED
+    tiktok_post_url = Column(String(500), nullable=True)  # Final TikTok post URL
+    scheduled_post_time = Column(DateTime, nullable=True)  # When to post to TikTok
+    
     # Media attachments
     attached_media_ids = Column(JSONB, default=list, nullable=False)  # List of InstanceMedia IDs
     
