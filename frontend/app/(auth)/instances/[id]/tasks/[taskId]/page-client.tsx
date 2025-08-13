@@ -10,8 +10,7 @@ import {
   ChevronLeft, 
   ClipboardList, 
   MessageSquare, 
-  Video,
-  Image as ImageIcon
+  Video
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import TikTokPostDialog from '@/components/tasks/tiktok-post-dialog'
@@ -43,13 +42,88 @@ export default function TaskDetailClient({ instanceId, taskId }: TaskDetailClien
     )
   }
 
-  // Use real data if available, otherwise use mock
-  const mockTask = taskData?.task || {
+  // Test data for demo tasks
+  const getTestTaskData = (id: string) => {
+    interface TestTask {
+      id: string
+      description: string
+      status: string
+      priority: string
+      output_data: {
+        video_url: string
+        thumbnail_url: string
+        suggested_caption: string
+        media_type: string
+        duration_seconds: number
+        resolution: string
+      }
+      tiktok_post_status: string | null
+      created_at: string
+      updated_at: string
+    }
+    const testTasks: Record<string, TestTask> = {
+      'test-task-1': {
+        id: 'test-task-1',
+        description: 'Create an engaging TikTok video showcasing our new RGB LED gaming mouse with 7 programmable buttons',
+        status: 'completed',
+        priority: 'normal',
+        output_data: {
+          video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          thumbnail_url: 'https://images.unsplash.com/photo-1527814050087-3793815479db?w=800',
+          suggested_caption: '🎮 Level up your gaming with our new RGB LED mouse! ✨ 7 programmable buttons for ultimate control 🔥 #GamingMouse #RGBLighting #TechGadgets #GamerLife #PCGaming',
+          media_type: 'video',
+          duration_seconds: 60,
+          resolution: '1080x1920'
+        },
+        tiktok_post_status: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      'test-task-2': {
+        id: 'test-task-2',
+        description: 'Create a trendy video showing our new summer dress collection with transitions',
+        status: 'completed',
+        priority: 'urgent',
+        output_data: {
+          video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          thumbnail_url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=800',
+          suggested_caption: '☀️ Summer vibes only! Check out our new collection 👗 Use code SUMMER20 for 20% off! 🛍️ #SummerFashion #OOTD #FashionTrends #StyleInspo #NewCollection',
+          media_type: 'video',
+          duration_seconds: 45,
+          resolution: '1080x1920'
+        },
+        tiktok_post_status: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      'test-task-3': {
+        id: 'test-task-3',
+        description: 'Create an inspiring video about productive morning routines',
+        status: 'completed',
+        priority: 'normal',
+        output_data: {
+          video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          thumbnail_url: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800',
+          suggested_caption: '🌅 Start your day right! My 5-minute morning routine for productivity 💪 #MorningRoutine #Productivity #HealthyLifestyle #Motivation #SelfCare',
+          media_type: 'video',
+          duration_seconds: 90,
+          resolution: '1080x1920'
+        },
+        tiktok_post_status: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    }
+    
+    return testTasks[id] || null
+  }
+
+  // Use real data if available, otherwise check for test data, otherwise use default mock
+  const mockTask = taskData?.task || getTestTaskData(taskId) || {
     id: taskId,
     description: 'Create TikTok video showcasing new LED product',
     status: 'completed',
     priority: 'normal',
-    output_format: 'video',
     output_data: {
       video_url: 'https://example.com/video.mp4',
       thumbnail_url: 'https://example.com/thumb.jpg',

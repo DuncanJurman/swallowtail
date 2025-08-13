@@ -13,6 +13,7 @@ import {
   ChevronRight,
   FileText,
   Shield,
+  TestTube,
 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { useState } from 'react'
@@ -20,6 +21,7 @@ import { useState } from 'react'
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Instances', href: '/instances', icon: Building2 },
+  { name: 'Test TikTok', href: '/test-tiktok', icon: TestTube },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
 
