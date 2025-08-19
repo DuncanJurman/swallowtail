@@ -17,6 +17,18 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Check if table already exists
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT FROM information_schema.tables "
+        "WHERE table_name = 'instance_media')"
+    ))
+    table_exists = result.scalar()
+    
+    if table_exists:
+        print("Table 'instance_media' already exists, skipping creation")
+        return
+    
     # Create instance_media table for tracking all media files
     op.create_table(
         'instance_media',
