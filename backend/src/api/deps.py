@@ -23,3 +23,9 @@ async def get_current_user() -> User:
         email="test@example.com",
         name="Test User"
     )
+
+
+async def get_current_user_id() -> UUID:
+    """Get current user ID - placeholder for now."""
+    user = await get_current_user()
+    return user.id
