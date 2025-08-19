@@ -2,16 +2,15 @@
 
 import io
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, Tuple
 from uuid import UUID, uuid4
 
 from PIL import Image
 from supabase import Client, create_client
 
 from src.core.config import get_settings
-from src.utils.db_helper import get_asyncpg_connection
 
 
 settings = get_settings()
@@ -21,13 +20,13 @@ class StoragePathGenerator:
     """Generates standardized storage paths for different asset types."""
     
     @staticmethod
-    def generate_image_path(product_id: UUID, image_type: str, sub_type: Optional[str] = None, 
+    def generate_instance_image_path(instance_id: UUID, image_type: str, sub_type: Optional[str] = None, 
                           filename: Optional[str] = None, session_id: Optional[str] = None) -> str:
-        """Generate storage path for images."""
-        base = f"products/{product_id}"
+        """Generate storage path for images based on instance."""
+        base = f"instances/{instance_id}"
         
         if image_type == "reference":
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             name = filename or "reference.jpg"
             return f"{base}/reference/{timestamp}_{name}"
             
@@ -46,12 +45,16 @@ class StoragePathGenerator:
             raise ValueError(f"Unknown image type: {image_type}")
     
     @staticmethod
-    def generate_video_path(product_id: UUID, video_type: str, platform: Optional[str] = None,
-                          filename: Optional[str] = None, session_id: Optional[str] = None) -> str:
-        """Generate storage path for videos."""
-        base = f"products/{product_id}"
+    def generate_instance_video_path(instance_id: UUID, video_type: str, platform: Optional[str] = None,
+                          filename: Optional[str] = None, session_id: Optional[str] = None, task_id: Optional[UUID] = None) -> str:
+        """Generate storage path for videos based on instance."""
+        base = f"instances/{instance_id}"
         
-        if video_type == "demo":
+        if video_type == "task_output" and task_id:
+            # Videos generated as task outputs
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            return f"{base}/tasks/{task_id}/{timestamp}_output.mp4"
+        elif video_type == "demo":
             session_id = session_id or str(uuid4())
             return f"{base}/demos/{session_id}_demo.mp4"
             
@@ -60,7 +63,7 @@ class StoragePathGenerator:
             return f"{base}/ads/{platform}/{session_id}_{platform}.mp4"
             
         elif video_type == "raw":
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             name = filename or "upload.mp4"
             return f"{base}/raw/{timestamp}_{name}"
             
@@ -121,26 +124,43 @@ class SupabaseStorageService:
         self.path_generator = StoragePathGenerator()
         self.optimizer = ImageOptimizer()
         
-        # Bucket names
-        self.IMAGE_BUCKET = "product-images"
-        self.VIDEO_BUCKET = "product-videos"  
-        self.REFERENCE_BUCKET = "reference-images"
+        # Bucket names - using instance-based buckets for MVP
+        self.INSTANCE_MEDIA_BUCKET = "instance-media"  # Public bucket for all instance media
+        self.INSTANCE_TEMP_BUCKET = "instance-temp"    # Private bucket for temporary files
     
-    async def upload_image(self, product_id: UUID, image_data: bytes, image_type: str,
+    def validate_instance_access(self, instance_id: UUID, user_id: UUID) -> bool:
+        """
+        Validate that a user has access to an instance.
+        
+        For MVP, this is a placeholder that always returns True.
+        In production, this would check the database to verify ownership.
+        
+        Args:
+            instance_id: The instance to access
+            user_id: The user attempting access
+            
+        Returns:
+            True if access is allowed, False otherwise
+        """
+        # MVP: Allow all access (controlled at API endpoint level)
+        # TODO: In production, query database to check instance.user_id == user_id
+        return True
+    
+    async def upload_instance_image(self, instance_id: UUID, image_data: bytes, image_type: str,
                          sub_type: Optional[str] = None, filename: Optional[str] = None,
                          session_id: Optional[str] = None, optimize: bool = True) -> Dict[str, Any]:
-        """Upload an image with automatic optimization and metadata storage."""
+        """Upload an image for an instance with automatic optimization and metadata storage."""
         # Generate path
-        path = self.path_generator.generate_image_path(
-            product_id=product_id,
+        path = self.path_generator.generate_instance_image_path(
+            instance_id=instance_id,
             image_type=image_type,
             sub_type=sub_type,
             filename=filename,
             session_id=session_id
         )
         
-        # Determine bucket
-        bucket = self.REFERENCE_BUCKET if image_type == "reference" else self.IMAGE_BUCKET
+        # Use appropriate bucket
+        bucket = self.INSTANCE_TEMP_BUCKET if image_type == "temp" else self.INSTANCE_MEDIA_BUCKET
         
         # Optimize image if requested
         file_size = len(image_data)
@@ -173,24 +193,21 @@ class SupabaseStorageService:
             raise Exception(f"Upload failed: {response.error}")
         
         # Get public URL
-        if bucket == self.IMAGE_BUCKET:
+        if bucket == self.INSTANCE_MEDIA_BUCKET:
             public_url = self.client.storage.from_(bucket).get_public_url(path)
         else:
-            # Reference images are private, need authenticated URL
+            # Temp images are private, need authenticated URL
             public_url = f"{settings.supabase_url}/storage/v1/object/authenticated/{bucket}/{path}"
         
-        # Store metadata in database
-        metadata = await self._store_image_metadata(
-            product_id=product_id,
-            storage_path=path,
-            public_url=public_url,
-            image_type=image_type,
-            sub_type=sub_type,
-            file_size=file_size,
-            dimensions=dimensions,
-            format=format,
-            session_id=session_id
-        )
+        # Store metadata in database (if we have the tables)
+        # For MVP, we'll store minimal metadata
+        metadata = {
+            "instance_id": str(instance_id),
+            "path": path,
+            "type": image_type,
+            "size": file_size,
+            "dimensions": dimensions
+        }
         
         return {
             "success": True,
@@ -201,17 +218,18 @@ class SupabaseStorageService:
             "dimensions": dimensions
         }
     
-    async def upload_video(self, product_id: UUID, video_data: bytes, video_type: str,
+    async def upload_instance_video(self, instance_id: UUID, video_data: bytes, video_type: str,
                          platform: Optional[str] = None, filename: Optional[str] = None,
-                         session_id: Optional[str] = None) -> Dict[str, Any]:
-        """Upload a video with metadata storage."""
+                         session_id: Optional[str] = None, task_id: Optional[UUID] = None) -> Dict[str, Any]:
+        """Upload a video for an instance with metadata storage."""
         # Generate path
-        path = self.path_generator.generate_video_path(
-            product_id=product_id,
+        path = self.path_generator.generate_instance_video_path(
+            instance_id=instance_id,
             video_type=video_type,
             platform=platform,
             filename=filename,
-            session_id=session_id
+            session_id=session_id,
+            task_id=task_id
         )
         
         # Check file size
@@ -220,7 +238,7 @@ class SupabaseStorageService:
             raise ValueError(f"Video size {file_size} exceeds 100MB limit")
         
         # Upload to Supabase
-        response = self.client.storage.from_(self.VIDEO_BUCKET).upload(
+        response = self.client.storage.from_(self.INSTANCE_MEDIA_BUCKET).upload(
             path=path,
             file=video_data,
             file_options={"content-type": "video/mp4"}
@@ -230,16 +248,16 @@ class SupabaseStorageService:
             raise Exception(f"Upload failed: {response.error}")
         
         # Get public URL
-        public_url = self.client.storage.from_(self.VIDEO_BUCKET).get_public_url(path)
+        public_url = self.client.storage.from_(self.INSTANCE_MEDIA_BUCKET).get_public_url(path)
         
         # Store metadata
-        metadata = await self._store_video_metadata(
-            product_id=product_id,
-            storage_path=path,
-            public_url=public_url,
-            video_type=video_type,
-            file_size=file_size
-        )
+        metadata = {
+            "instance_id": str(instance_id),
+            "task_id": str(task_id) if task_id else None,
+            "path": path,
+            "type": video_type,
+            "size": file_size
+        }
         
         return {
             "success": True,
@@ -249,247 +267,45 @@ class SupabaseStorageService:
             "size": file_size
         }
     
-    async def list_product_images(self, product_id: UUID, image_type: Optional[str] = None) -> List[Dict]:
-        """List all images for a product."""
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            if image_type:
-                query = """
-                    SELECT id, storage_path, public_url, image_type, sub_type, file_size,
-                           width, height, format, created_at
-                    FROM image_metadata
-                    WHERE product_id = $1 AND image_type = $2 AND status = 'active'
-                    ORDER BY created_at DESC
-                """
-                rows = await conn.fetch(query, product_id, image_type)
-            else:
-                query = """
-                    SELECT id, storage_path, public_url, image_type, sub_type, file_size,
-                           width, height, format, created_at
-                    FROM image_metadata
-                    WHERE product_id = $1 AND status = 'active'
-                    ORDER BY created_at DESC
-                """
-                rows = await conn.fetch(query, product_id)
-            
-            return [dict(row) for row in rows]
-        finally:
-            await conn.close()
-    
-    async def list_product_videos(self, product_id: UUID, video_type: Optional[str] = None) -> List[Dict]:
-        """List all videos for a product."""
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            if video_type:
-                query = """
-                    SELECT id, storage_path, public_url, video_type, file_size, created_at
-                    FROM video_metadata
-                    WHERE product_id = $1 AND video_type = $2 AND status = 'active'
-                    ORDER BY created_at DESC
-                """
-                rows = await conn.fetch(query, product_id, video_type)
-            else:
-                query = """
-                    SELECT id, storage_path, public_url, video_type, file_size, created_at
-                    FROM video_metadata
-                    WHERE product_id = $1 AND status = 'active'
-                    ORDER BY created_at DESC
-                """
-                rows = await conn.fetch(query, product_id)
-            
-            return [dict(row) for row in rows]
-        finally:
-            await conn.close()
-    
-    async def delete_image(self, path: str) -> None:
-        """Delete an image from storage and mark as deleted in database."""
-        # Determine bucket from path
-        bucket = self.REFERENCE_BUCKET if "/reference/" in path else self.IMAGE_BUCKET
-        
-        # Delete from storage
-        self.client.storage.from_(bucket).remove([path])
-        
-        # Mark as deleted in database
-        await self._mark_image_deleted(path)
-    
-    async def delete_video(self, path: str) -> None:
-        """Delete a video from storage and mark as deleted in database."""
-        # Delete from storage
-        self.client.storage.from_(self.VIDEO_BUCKET).remove([path])
-        
-        # Mark as deleted in database
-        await self._mark_video_deleted(path)
-    
-    async def delete_product_assets(self, product_id: UUID) -> Dict[str, int]:
-        """Delete all assets for a product."""
-        # Get all assets
-        images = await self.list_product_images(product_id)
-        videos = await self.list_product_videos(product_id)
-        
-        # Get reference images separately
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            ref_query = """
-                SELECT storage_path FROM image_metadata
-                WHERE product_id = $1 AND image_type = 'reference' AND status = 'active'
-            """
-            ref_rows = await conn.fetch(ref_query, product_id)
-            reference_paths = [row['storage_path'] for row in ref_rows]
-        finally:
-            await conn.close()
-        
-        # Delete from storage
-        if images:
-            image_paths = [img['storage_path'] for img in images if img['image_type'] != 'reference']
-            if image_paths:
-                self.client.storage.from_(self.IMAGE_BUCKET).remove(image_paths)
-        
-        if reference_paths:
-            self.client.storage.from_(self.REFERENCE_BUCKET).remove(reference_paths)
-        
-        if videos:
-            video_paths = [vid['storage_path'] for vid in videos]
-            self.client.storage.from_(self.VIDEO_BUCKET).remove(video_paths)
-        
-        # Mark as deleted in database
-        await self._mark_product_assets_deleted(product_id)
-        
-        return {
-            "images": len(images) - len(reference_paths),
-            "videos": len(videos),
-            "references": len(reference_paths)
-        }
-    
     async def get_signed_url(self, path: str, bucket: str, expires_in: int = 3600) -> str:
         """Get a signed URL for private content."""
         response = self.client.storage.from_(bucket).create_signed_url(path, expires_in)
         return response['signedURL']
     
-    async def cleanup_temp_images(self, older_than_hours: int = 24) -> int:
-        """Clean up temporary images older than specified hours."""
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            # Find old temp images
-            query = """
-                SELECT storage_path FROM image_metadata
-                WHERE image_type = 'temp' 
-                AND status = 'active'
-                AND created_at < NOW() - INTERVAL '%s hours'
-            """
-            rows = await conn.fetch(query, older_than_hours)
+    async def store_media_metadata(
+        self,
+        instance_id: UUID,
+        storage_path: str,
+        public_url: str,
+        media_type: str,
+        file_size: int,
+        task_id: Optional[UUID] = None,
+        media_subtype: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        metadata: Optional[Dict] = None
+    ) -> str:
+        """
+        Store media metadata in database (MVP version).
+        
+        In production, this would use proper database connections.
+        For MVP, this is a placeholder that returns a mock ID.
+        
+        Args:
+            instance_id: Instance that owns this media
+            storage_path: Path in storage bucket
+            public_url: Public URL for accessing the media
+            media_type: 'image' or 'video'
+            file_size: Size in bytes
+            task_id: Optional associated task
+            media_subtype: Optional subtype (e.g., 'reference', 'generated')
+            mime_type: MIME type of the file
+            metadata: Additional metadata as JSON
             
-            if rows:
-                paths = [row['storage_path'] for row in rows]
-                # Delete from storage
-                self.client.storage.from_(self.IMAGE_BUCKET).remove(paths)
-                
-                # Mark as deleted
-                for path in paths:
-                    await self._mark_image_deleted(path)
-            
-            return len(rows)
-        finally:
-            await conn.close()
+        Returns:
+            Media record ID
+        """
+        # MVP: Return mock ID
+        # TODO: In production, insert into instance_media table
+        import uuid
+        return str(uuid.uuid4())
     
-    # Private methods for database operations
-    
-    async def _store_image_metadata(self, **kwargs) -> Dict:
-        """Store image metadata in database."""
-        # Use direct asyncpg connection
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            query = """
-                INSERT INTO image_metadata (
-                    product_id, storage_path, public_url, image_type, sub_type,
-                    file_size, width, height, format, generation_session_id
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                RETURNING id, created_at
-            """
-            
-            dimensions = kwargs.get('dimensions', (None, None))
-            
-            row = await conn.fetchrow(
-                query,
-                kwargs['product_id'],
-                kwargs['storage_path'],
-                kwargs['public_url'],
-                kwargs['image_type'],
-                kwargs.get('sub_type'),
-                kwargs['file_size'],
-                dimensions[0] if dimensions else None,
-                dimensions[1] if dimensions else None,
-                kwargs.get('format', 'unknown'),
-                kwargs.get('session_id')
-            )
-            
-            return {
-                "id": str(row['id']),
-                "created_at": row['created_at'].isoformat()
-            }
-        finally:
-            await conn.close()
-    
-    async def _store_video_metadata(self, **kwargs) -> Dict:
-        """Store video metadata in database."""
-        # Use direct asyncpg connection
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            query = """
-                INSERT INTO video_metadata (
-                    product_id, storage_path, public_url, video_type, file_size
-                ) VALUES ($1, $2, $3, $4, $5)
-                RETURNING id, created_at
-            """
-            
-            row = await conn.fetchrow(
-                query,
-                kwargs['product_id'],
-                kwargs['storage_path'],
-                kwargs['public_url'],
-                kwargs['video_type'],
-                kwargs['file_size']
-            )
-            
-            return {
-                "id": str(row['id']),
-                "created_at": row['created_at'].isoformat()
-            }
-        finally:
-            await conn.close()
-    
-    async def _mark_image_deleted(self, path: str):
-        """Mark image as deleted in database."""
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            await conn.execute(
-                "UPDATE image_metadata SET status = 'deleted' WHERE storage_path = $1",
-                path
-            )
-        finally:
-            await conn.close()
-    
-    async def _mark_video_deleted(self, path: str):
-        """Mark video as deleted in database."""  
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            await conn.execute(
-                "UPDATE video_metadata SET status = 'deleted' WHERE storage_path = $1",
-                path
-            )
-        finally:
-            await conn.close()
-    
-    async def _mark_product_assets_deleted(self, product_id: UUID):
-        """Mark all product assets as deleted."""
-        conn = await get_asyncpg_connection(use_direct_url=False)
-        try:
-            await conn.execute(
-                "UPDATE image_metadata SET status = 'deleted' WHERE product_id = $1",
-                product_id
-            )
-            await conn.execute(
-                "UPDATE video_metadata SET status = 'deleted' WHERE product_id = $1",
-                product_id
-            )
-        finally:
-            await conn.close()

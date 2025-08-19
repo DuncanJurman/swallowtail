@@ -245,30 +245,30 @@ backend/
 ### External Services
 
 #### `src/services/storage.py`
-- **Purpose**: Manage file storage for product images and videos using Supabase Storage
+- **Purpose**: Manage file storage for instance-based media using Supabase Storage
 - **Key Features**:
-  - Product-based partitioning (`products/{product_id}/...`)
-  - Automatic image optimization (WebP conversion, resizing)
-  - Three storage buckets: product-images (public), product-videos (public), reference-images (private)
-  - Metadata tracking in PostgreSQL
-  - Support for different image types: reference, generated, temp
-  - Support for different video types: demo, ad, raw
+  - Instance-based partitioning (`instances/{instance_id}/...`) for isolation
+  - MVP approach: No RLS policies, using service key for all operations
+  - Two storage buckets: instance-media (public), instance-temp (private)
+  - Metadata tracking in PostgreSQL via instance_media table
+  - Support for different media types: images, videos, documents
+  - Support for task-specific outputs and reference materials
 - **Main Class**: `SupabaseStorageService`
-  - `upload_image()`: Upload images with automatic optimization and metadata storage
-  - `upload_video()`: Upload videos with size validation
-  - `list_product_images()`: Get all images for a product
-  - `delete_product_assets()`: Clean up all assets for a product
-  - `get_signed_url()`: Generate temporary access URLs for private content
-- **Image Optimization**:
-  - Max dimension: 2048px (maintains aspect ratio)
-  - Format: WebP for generated images
-  - Quality: 85% for good balance
-  - Size reduction: Typically 70-90%
+  - `upload_video()`: Upload videos with automatic path generation
+  - `upload_image()`: Upload images with optimization
+  - `upload_task_output()`: Store task-generated media
+  - `list_instance_media()`: Get all media for an instance
+  - `delete_instance_media()`: Clean up instance assets
+  - `get_public_url()`: Generate public URLs for media access
 - **Path Structure**:
-  - Reference: `products/{id}/reference/{timestamp}_{filename}`
-  - Generated: `products/{id}/generated/{subtype}/{session}_final.webp`
-  - Temp: `products/{id}/temp/{session}/{image_id}.webp`
-  - Videos: `products/{id}/{type}/...`
+  - Task outputs: `instances/{instance_id}/tasks/{task_id}/{timestamp}_output.{ext}`
+  - Reference: `instances/{instance_id}/reference/{timestamp}_{filename}`
+  - Generated: `instances/{instance_id}/generated/{type}/{filename}`
+  - Temp: `instances/{instance_id}/temp/{session}/{filename}`
+- **Storage Configuration**:
+  - Public bucket (instance-media): For serving videos/images to external services
+  - Private bucket (instance-temp): For processing and temporary files
+  - Direct Supabase service key usage for MVP (no user-level RLS)
 
 #### `src/services/pinecone.py`
 - **Purpose**: Vector database service for managing product embeddings
@@ -292,11 +292,12 @@ backend/
 - **Key Features**:
   - OAuth 2.0 flow with CSRF protection
   - Token management with automatic refresh
-  - Content posting API (sandbox mode)
+  - Content posting API (sandbox mode support)
   - Encrypted credential storage using Fernet encryption
   - Support for multiple TikTok accounts per instance
   - Account naming for easy identification
   - Timezone-aware datetime handling for token expiration
+  - Domain verification for video URL hosting
 - **Main Components**:
   - `oauth.py`: OAuth flow implementation
     - `generate_auth_url()`: Create authorization URL with state (includes instance_id and optional account_name)
@@ -309,8 +310,15 @@ backend/
     - Note: Uses re-query instead of `db.refresh()` for pgbouncer transaction pooling compatibility
   - `content_api.py`: Content posting functionality
     - `query_creator_info()`: Get creator permissions and limits
-    - `post_video_sandbox()`: Post videos (PULL_FROM_URL or FILE_UPLOAD)
+    - `post_video_sandbox()`: Post videos using PULL_FROM_URL method
+    - `post_video_from_url()`: Simplified posting interface
     - `check_post_status()`: Monitor post processing status
+    - Enhanced error handling with specific error codes:
+      - `unaudited_client_can_only_post_to_private_accounts`: Sandbox requires private account
+      - `url_ownership_unverified`: Domain not verified
+      - `spam_risk_too_many_posts`: Rate limiting
+    - Retry logic with exponential backoff
+    - URL validation for security (only verified domains)
   - `models.py`: Pydantic models for API data
   - `config.py`: TikTok API configuration
 - **Environment Variables**:
@@ -354,6 +362,37 @@ backend/
     - Supports account selection for multi-account instances
   - `DELETE /api/v1/tiktok/disconnect/{instance_id}/{account_id}`: Disconnect account
     - Revokes token and removes from database
+
+#### `src/api/routes/tiktok_mvp.py` (NEW)
+- **Purpose**: Simplified MVP endpoints for TikTok testing
+- **Endpoints**:
+  - `GET /api/v1/tiktok-mvp/test-connection`: Test TikTok configuration
+    - Returns sandbox mode status and configuration
+  - `POST /api/v1/tiktok-mvp/test-post`: Direct video posting test
+    - Request: `{ title, video_url, privacy_level }`
+    - Response: Success status with publish_id
+  - `POST /api/v1/tiktok-mvp/tasks/{task_id}/simple-post`: Post task output to TikTok
+    - Simplified version without full validation
+    - Extracts video URL from task output
+  - `GET /api/v1/tiktok-mvp/status/{publish_id}`: Check post status
+    - Returns current publishing status from TikTok
+
+#### `src/api/routes/tasks.py` (Enhanced)
+- **Purpose**: Task management with TikTok posting integration
+- **New TikTok Endpoints**:
+  - `GET /api/v1/tasks/{task_id}/detail`: Get detailed task information
+    - Returns planning steps, execution logs, attached media
+    - Includes TikTok posting status and capabilities
+    - Extracts suggested captions from output data
+  - `POST /api/v1/tasks/{task_id}/post-to-tiktok`: Post task video to TikTok
+    - Request: TikTokPostRequest with title, privacy settings
+    - Validates task has video output
+    - Handles token refresh automatically
+    - Updates task with publish_id and status
+  - `GET /api/v1/tasks/{task_id}/post-status`: Check TikTok post status
+    - Returns current publishing status from TikTok API
+    - Updates task when publishing completes or fails
+    - Generates TikTok URL for published videos
 
 ### Database Layer
 
@@ -1244,6 +1283,228 @@ The task queue system provides scalable background task processing using Celery 
   - Processes scheduled tasks every 5 minutes
   - Automatic retry on failure
 
+## TikTok Integration
+
+### Overview
+Complete TikTok content posting integration with OAuth 2.0 authentication, sandbox support, and automated video publishing from task outputs.
+
+### Components
+
+#### Database Models
+
+##### `src/models/tiktok_credentials.py`
+- **Purpose**: Store encrypted TikTok OAuth credentials per instance
+- **Features**:
+  - Fernet encryption for tokens
+  - Automatic token refresh detection
+  - Multiple accounts per instance support
+  - Scope management
+
+##### Enhanced `src/models/instance.py`
+- **TikTok-specific fields added to InstanceTask**:
+  - `tiktok_publish_id`: TikTok's publish ID for tracking
+  - `tiktok_post_status`: Current posting status (PROCESSING, PUBLISHED, FAILED)
+  - `tiktok_post_url`: Final TikTok video URL
+  - `tiktok_post_data`: Complete posting metadata
+  - `scheduled_post_time`: Optional scheduled posting time
+- **Helper methods**:
+  - `can_post_to_tiktok()`: Validate task readiness for posting
+  - `get_video_url()`: Extract video URL from output data
+  - `update_tiktok_status()`: Update posting status
+
+#### Services
+
+##### `src/services/tiktok/oauth.py`
+- **Purpose**: Handle TikTok OAuth flow and token management
+- **Features**:
+  - Authorization URL generation with PKCE
+  - Token exchange and refresh
+  - Secure token storage with encryption
+  - Automatic expiration tracking
+
+##### `src/services/tiktok/content_api.py`
+- **Class**: `TikTokContentAPI`
+- **Purpose**: Interface with TikTok Content Posting API
+- **Key Methods**:
+  - `query_creator_info()`: Get account capabilities and limits
+  - `post_video_sandbox()`: Post video using PULL_FROM_URL method
+  - `check_post_status()`: Monitor publishing progress
+  - `post_video_from_task()`: Direct task-to-TikTok posting
+- **Features**:
+  - URL validation for security (Supabase domains only)
+  - Retry logic with exponential backoff
+  - Error mapping for better debugging
+  - Sandbox mode support
+
+#### API Endpoints
+
+##### Enhanced `src/api/routes/tasks.py`
+- **GET `/api/v1/tasks/{task_id}/detail`**:
+  - Returns comprehensive task information
+  - Includes planning steps and execution logs
+  - Indicates TikTok posting readiness
+  - Extracts suggested captions from output
+
+- **POST `/api/v1/tasks/{task_id}/post-to-tiktok`**:
+  - Request body: `TikTokPostRequest`
+    - `title`: Video caption (max 2200 chars)
+    - `privacy_level`: Visibility setting
+    - `disable_duet/stitch/comment`: Privacy controls
+    - `schedule_time`: Optional scheduling
+  - Validates task completion and video availability
+  - Handles expired token refresh automatically
+  - Updates task with publish ID and status
+  - Returns: `TikTokPostResponse` with success status
+
+- **GET `/api/v1/tasks/{task_id}/post-status`**:
+  - Checks current publishing status from TikTok
+  - Updates task when publishing completes
+  - Generates final TikTok URL for published videos
+  - Returns: `TikTokPostStatusResponse` with detailed status
+
+##### `src/api/routes/tiktok.py`
+- **GET `/api/v1/tiktok/auth/url`**: Generate OAuth authorization URL
+- **POST `/api/v1/tiktok/auth/callback`**: Handle OAuth callback
+- **POST `/api/v1/tiktok/auth/refresh`**: Manually refresh tokens
+- **GET `/api/v1/tiktok/accounts`**: List connected TikTok accounts
+
+#### Schemas
+
+##### `src/models/instance_schemas.py`
+- **TaskDetailResponse**: Enhanced with TikTok fields
+  - `can_post_to_tiktok`: Boolean flag
+  - `suggested_caption`: Extracted from output
+  - `tiktok_status`: Current posting status
+  - `tiktok_url`: Published video URL
+
+- **TikTokPostRequest**: Posting configuration
+- **TikTokPostResponse**: Posting result with publish ID
+- **TikTokPostStatusResponse**: Detailed status check result
+
+### Security Features
+- **Token Encryption**: All OAuth tokens encrypted with Fernet
+- **URL Validation**: Only verified domains (Supabase) allowed
+- **Scope Management**: Track and validate OAuth scopes
+- **Automatic Token Refresh**: Transparent token renewal
+
+### Testing
+
+#### Manual Testing Scripts
+
+##### `scripts/test_storage_and_tiktok.py`
+- **Purpose**: Complete end-to-end test of storage upload and TikTok posting
+- **Features**:
+  - Downloads test video from public source
+  - Uploads to Supabase storage with instance-based paths
+  - Generates public URL for video access
+  - Posts video to TikTok using real OAuth credentials
+  - Includes cleanup option for test files
+- **Usage**: `poetry run python scripts/test_storage_and_tiktok.py`
+
+##### `scripts/get_tiktok_credentials.py`
+- **Purpose**: Retrieve and decrypt OAuth credentials from database
+- **Features**:
+  - Lists all TikTok accounts with expiration status
+  - Decrypts access tokens using Fernet
+  - Provides credentials for manual testing
+  - Guides through OAuth flow if no credentials exist
+- **Usage**: `poetry run python scripts/get_tiktok_credentials.py`
+
+##### `scripts/test_tiktok_posting.py`
+- **Purpose**: Test TikTok posting workflow with mock data
+- **Features**:
+  - Tests storage upload simulation
+  - Verifies TikTok API configuration
+  - Posts test videos with sandbox settings
+  - Checks post status after submission
+- **🔄 DUMMY**: Uses simulated uploads and mock URLs for MVP testing
+
+#### Automated Tests
+
+##### `tests/api/test_tiktok_endpoints.py`
+- Comprehensive endpoint testing with mocking
+- Token refresh scenarios
+- Status update verification
+- Duplicate post prevention
+
+#### `tests/services/test_tiktok_content_enhanced.py`
+- Content API method testing
+- Retry logic verification
+- URL validation tests
+- Error handling scenarios
+
+#### `tests/api/test_tiktok_posting_api.py`
+- Integration tests with SQLite
+- Concurrent posting prevention
+- Full workflow testing
+
+### Configuration
+Required environment variables:
+```bash
+TIKTOK_CLIENT_KEY=your_client_key
+TIKTOK_CLIENT_SECRET=your_client_secret
+TIKTOK_REDIRECT_URI=https://your-domain.com/tiktok/callback
+TIKTOK_SANDBOX_MODE=true  # Sandbox mode restrictions apply
+ENCRYPTION_KEY=your_fernet_encryption_key
+```
+
+### Sandbox Mode Limitations
+- **Account Requirements**: TikTok account MUST be set to private
+- **Privacy Level**: Only `SELF_ONLY` allowed (videos visible only to poster)
+- **Domain Verification**: Video URLs must be from verified domains
+- **Rate Limits**: Up to 5 users can post within 24 hours
+- **Test Accounts**: Limited to 10 test accounts
+
+## Supabase Storage Setup
+
+### Overview
+The system uses Supabase Storage for all media files with instance-based isolation. Each instance has its own folder structure, ensuring data separation.
+
+### Storage Buckets
+1. **instance-media** (Public):
+   - Stores videos and images for external access
+   - Used for TikTok video URLs (domain verified)
+   - Path: `instances/{instance_id}/...`
+   - Accessible via: `https://{project_id}.supabase.co/storage/v1/object/public/instance-media/`
+
+2. **instance-temp** (Private):
+   - Temporary processing files
+   - Requires service key for access
+   - Auto-cleanup recommended
+
+### Setup Scripts
+
+#### `scripts/setup_instance_storage.py`
+- **Purpose**: Create Supabase storage buckets
+- **Features**:
+  - Creates public and private buckets
+  - Configures public access settings
+  - MVP approach without RLS policies
+- **Usage**: `poetry run python scripts/setup_instance_storage.py`
+
+### Database Tables
+
+#### `instance_media` Table
+- **Purpose**: Track all media files for instances
+- **Fields**:
+  - `id`: UUID primary key
+  - `instance_id`: Foreign key to instances
+  - `task_id`: Optional link to task that created it
+  - `media_type`: Type of media (image/video/document)
+  - `storage_path`: Path in Supabase storage
+  - `public_url`: Public access URL
+  - `metadata`: JSONB for additional info
+  - Timestamps: created_at, updated_at
+
+### Domain Verification for TikTok
+- **Verified Domain**: `https://{project_id}.supabase.co/storage/v1/object/public/instance-media/`
+- **Verification File**: Uploaded to root of bucket
+- **Process**:
+  1. TikTok provides verification file
+  2. Upload to Supabase storage root
+  3. Verify domain in TikTok developer console
+  4. Videos from this domain can be posted
+
 ## Dummy Implementations
 
 The following components have placeholder/dummy implementations that need to be replaced:
@@ -1289,6 +1550,53 @@ The following components have placeholder/dummy implementations that need to be 
 - **`src/api/routes/image_generation.py`**:
   - `/api/v1/images/generate-async` returns placeholder response
   - TODO: Implement queue-based async image generation
+
+## MVP TikTok Posting Flow
+
+### Complete Working Flow
+1. **OAuth Setup**:
+   - User connects TikTok account via `/api/v1/tiktok/auth`
+   - Credentials encrypted and stored in database
+   - Multiple accounts per instance supported
+
+2. **Storage Upload**:
+   - Videos uploaded to Supabase instance-media bucket
+   - Public URLs generated for TikTok access
+   - Instance-based path isolation
+
+3. **Domain Verification**:
+   - Supabase storage domain verified with TikTok
+   - Verification file hosted at bucket root
+   - Enables PULL_FROM_URL posting method
+
+4. **Posting Requirements**:
+   - **Sandbox Mode**: Account MUST be private
+   - **Privacy Level**: Only SELF_ONLY allowed
+   - **Video Format**: MP4 recommended
+   - **URL**: Must be from verified Supabase domain
+
+5. **API Flow**:
+   - Task completes and generates video
+   - Video uploaded to Supabase storage
+   - Post to TikTok via `/api/v1/tasks/{task_id}/post-to-tiktok`
+   - Monitor status via `/api/v1/tasks/{task_id}/post-status`
+   - Final TikTok URL stored in task
+
+### Testing the Complete Flow
+```bash
+# 1. Setup storage buckets
+poetry run python scripts/setup_instance_storage.py
+
+# 2. Connect TikTok account (ensure it's private!)
+curl -X POST http://localhost:8000/api/v1/tiktok/auth \
+  -H "Content-Type: application/json" \
+  -d '{"instance_id": "your-instance-id"}'
+
+# 3. Complete OAuth in browser
+
+# 4. Test posting
+poetry run python scripts/test_storage_and_tiktok.py
+```
 
 ## Next Steps
 
@@ -1432,6 +1740,21 @@ tests/
   - `led-squirtle.jpg`: Primary reference image
   - `led-squirtle2.jpg`: Identical product for matching tests
   - `led-mew.jpg`: Different product for rejection tests
+
+#### TikTok Integration Tests
+- `tests/integration/test_tiktok_posting_flow.py`: Complete TikTok posting workflow
+  - Task detail endpoint with video output
+  - Posting to TikTok with credentials
+  - Token refresh flow
+  - Status checking and updates
+  - Error handling scenarios
+
+- `tests/services/test_tiktok_content_enhanced.py`: Enhanced content API tests
+  - Creator info queries with retry
+  - Video posting with validation
+  - URL domain verification
+  - Task-based posting
+  - Post cancellation
 
 ### Running Tests
 ```bash

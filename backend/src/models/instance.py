@@ -1,6 +1,6 @@
 """Database models for instance management in Swallowtail."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import enum
 
@@ -54,8 +54,8 @@ class Instance(Base):
     configuration = Column(JSONB, default=dict, nullable=False)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="instances")
@@ -85,8 +85,8 @@ class InstanceAgent(Base):
     is_enabled = Column(Boolean, default=True, nullable=False)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     instance = relationship("Instance", back_populates="agents")
@@ -143,8 +143,8 @@ class InstanceTask(Base):
     parent_task_id = Column(UUID(as_uuid=True), nullable=True)  # For subtasks
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     started_at = Column(DateTime, nullable=True)  # Legacy - use processing_started_at
     completed_at = Column(DateTime, nullable=True)  # Legacy - use processing_ended_at
     
@@ -158,6 +158,53 @@ class InstanceTask(Base):
         Index('idx_instance_tasks_priority', 'instance_id', 'priority', 'created_at'),
         Index('idx_instance_tasks_scheduled', 'scheduled_for', 'status'),
     )
+    
+    # Helper methods for TikTok posting
+    def get_video_url(self) -> str | None:
+        """Extract video URL from output_data."""
+        if not self.output_data:
+            return None
+        
+        # Check for video_url in output_data
+        if isinstance(self.output_data, dict):
+            return self.output_data.get('video_url') or self.output_data.get('media_url')
+        
+        return None
+    
+    def can_post_to_tiktok(self) -> bool:
+        """Check if task is ready for TikTok posting."""
+        # Must be completed
+        if self.status != InstanceTaskStatus.COMPLETED:
+            return False
+        
+        # Must have video output
+        if not self.get_video_url():
+            return False
+        
+        # Must not already be posted or in progress
+        if self.tiktok_post_status in ['PROCESSING', 'PUBLISHED']:
+            return False
+        
+        return True
+    
+    def update_tiktok_status(self, status: str, publish_id: str = None, post_url: str = None, error: str = None):
+        """Update TikTok posting status and related fields."""
+        self.tiktok_post_status = status
+        
+        if publish_id:
+            self.tiktok_publish_id = publish_id
+        
+        if post_url:
+            self.tiktok_post_url = post_url
+        
+        if error and not self.tiktok_post_data:
+            self.tiktok_post_data = {}
+        
+        if error:
+            self.tiktok_post_data['error'] = error
+            self.tiktok_post_data['error_timestamp'] = datetime.now(timezone.utc).isoformat()
+        
+        self.updated_at = datetime.now(timezone.utc)
 
 
 class InstanceMedia(Base):
@@ -177,7 +224,7 @@ class InstanceMedia(Base):
     media_category = Column(String(50), default="reference")  # reference, generated, etc.
     
     # Timestamps
-    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     instance = relationship("Instance", back_populates="media")
